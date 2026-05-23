@@ -1,0 +1,29 @@
+{
+  "说明": "操作教程初始数据",
+  "数据": [
+    {
+      "category": "快速指南",
+      "desc": "引导用户快速了解小程序首页和设备绑定流程",
+      "file_name": "快速入门.pdf",
+      "file_url": "",
+      "sort": 1,
+      "update_time": 1779173903540
+    },
+    {
+      "category": "报修指南",
+      "desc": "说明报修流程、寄出注意事项和进度查询方式",
+      "file_name": "操作流程.pdf",
+      "file_url": "",
+      "sort": 2,
+      "update_time": 1779173903540
+    },
+    {
+      "category": "自查指南",
+      "desc": "帮助用户在报修前完成常见故障自查",
+      "file_name": "自查手册.pdf",
+      "file_url": "",
+      "sort": 3,
+      "update_time": 1779173903540
+    }
+  ]
+}
