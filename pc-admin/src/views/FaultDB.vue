@@ -5,9 +5,9 @@
         产品分类
         <el-button type="primary" link @click="openCatDialog(null)"><el-icon><Plus /></el-icon></el-button>
       </div>
-      <div v-for="cat in categories" :key="cat.id"
+      <div v-for="cat in categories" :key="cat._id"
            class="cat-item"
-           :class="{ active: currentCategory && currentCategory.id === cat.id }"
+           :class="{ active: currentCategory && currentCategory._id === cat._id }"
            @click="currentCategory = cat">
         <span>{{cat.name}}</span>
         <span style="display:flex; gap:6px;">
@@ -27,7 +27,8 @@
         <div class="table-responsive">
           <el-table :data="currentFaultItems" class="modern-table" style="width:100%;">
             <el-table-column prop="name" label="故障现象" width="150"></el-table-column>
-            <el-table-column prop="desc" label="故障描述" show-overflow-tooltip></el-table-column>
+            <el-table-column prop="desc" label="相关问题" show-overflow-tooltip></el-table-column>
+            <el-table-column prop="checkSteps" label="确认方式" show-overflow-tooltip></el-table-column>
             <el-table-column prop="solution" label="处理方式" show-overflow-tooltip></el-table-column>
             <el-table-column prop="createdAt" label="创建时间" width="150"></el-table-column>
             <el-table-column label="操作" width="130" align="right">
@@ -59,11 +60,14 @@
       <el-form-item label="故障现象">
         <el-input v-model="faultForm.name" placeholder="请输入故障现象"></el-input>
       </el-form-item>
-      <el-form-item label="故障描述">
-        <el-input v-model="faultForm.desc" type="textarea" :rows="3" placeholder="请详细描述故障现象"></el-input>
+      <el-form-item label="相关问题">
+        <el-input v-model="faultForm.desc" type="textarea" :rows="3" placeholder="请输入客户常见描述，多个内容用分号隔开"></el-input>
+      </el-form-item>
+      <el-form-item label="确认方式">
+        <el-input v-model="faultForm.checkSteps" type="textarea" :rows="3" placeholder="请输入排查或确认步骤，多个内容用分号隔开"></el-input>
       </el-form-item>
       <el-form-item label="处理方式">
-        <el-input v-model="faultForm.solution" type="textarea" :rows="4" placeholder="请输入处理方式"></el-input>
+        <el-input v-model="faultForm.solution" type="textarea" :rows="4" placeholder="请输入处理方式，多个内容用分号隔开"></el-input>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -116,6 +120,7 @@ const loadFaults = async () => {
       catId: f.category_id,
       name: f.fault_name,
       desc: f.related_questions?.join('；') || '',
+      checkSteps: f.check_steps?.join('；') || '',
       solution: f.fix_solutions?.join('；') || '',
       createdAt: f.create_time ? new Date(f.create_time).toLocaleString() : ''
     }))
@@ -188,16 +193,22 @@ const deleteCategoryHandler = (cat) => {
 }
 
 const faultDialogVisible = ref(false)
-const faultForm = reactive({ _id: null, name: '', desc: '', solution: '' })
+const faultForm = reactive({ _id: null, name: '', desc: '', checkSteps: '', solution: '' })
 
 const openFaultDialog = (fault) => {
   isEdit.value = !!fault
   faultForm._id = fault ? fault._id : null
   faultForm.name = fault ? fault.name : ''
   faultForm.desc = fault ? fault.desc : ''
+  faultForm.checkSteps = fault ? fault.checkSteps : ''
   faultForm.solution = fault ? fault.solution : ''
   faultDialogVisible.value = true
 }
+
+const splitTextList = (value) => String(value || '')
+  .split(/\n|\uFF1B|;/)
+  .map(item => item.trim())
+  .filter(Boolean)
 
 const saveFault = async () => {
   if (!faultForm.name.trim()) { ElMessage.warning('请输入故障现象'); return }
@@ -207,9 +218,9 @@ const saveFault = async () => {
     const data = {
       category_id: currentCategory.value._id,
       fault_name: faultForm.name,
-      related_questions: faultForm.desc ? faultForm.desc.split('；').filter(q => q.trim()) : [],
-      fix_solutions: faultForm.solution ? faultForm.solution.split('；').filter(s => s.trim()) : [],
-      check_steps: [],
+      related_questions: splitTextList(faultForm.desc),
+      check_steps: splitTextList(faultForm.checkSteps),
+      fix_solutions: splitTextList(faultForm.solution),
       is_recommend_repair: false
     }
     if (isEdit.value) {

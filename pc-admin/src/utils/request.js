@@ -18,7 +18,7 @@ request.interceptors.response.use(
       ElMessage.error(errMsg)
       return Promise.reject(new Error(errMsg))
     }
-    return res.data
+    return res.data !== undefined ? res.data : res
   },
   error => {
     console.error('请求错误:', error)

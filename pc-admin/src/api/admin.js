@@ -9,6 +9,15 @@ export const adminLogin = (username, password) => {
   })
 }
 
+// 修改当前登录账号密码
+export const changeMyPassword = (token, oldPassword, newPassword) => {
+  return request.post(`${API_BASE.adminSys}/changeMyPassword`, {
+    token,
+    oldPassword,
+    newPassword
+  })
+}
+
 // 获取员工列表
 export const getStaffList = (token) => {
   return request.post(`${API_BASE.adminSys}/manageStaff`, {
@@ -41,6 +50,14 @@ export const disableStaff = (token, staffId, disabled) => {
     token,
     action: 'disable',
     staff: { _id: staffId, disabled }
+  })
+}
+
+// 管理员重置员工密码为系统默认密码
+export const resetUserPassword = (token, userId) => {
+  return request.post(`${API_BASE.adminSys}/resetUserPassword`, {
+    token,
+    userId
   })
 }
 

@@ -15,9 +15,10 @@
             <el-switch v-model="row.active" active-text="启用" inactive-text="禁用" @change="toggleUserStatus(row)"></el-switch>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" fixed="right" align="right">
+        <el-table-column label="操作" width="210" fixed="right" align="right">
           <template #default="{row}">
             <el-button type="primary" link @click="openUserDialog(row)">编辑</el-button>
+            <el-button type="danger" link :disabled="row.username === 'admin_root'" @click="confirmResetPassword(row)">重置密码</el-button>
             <el-popconfirm title="确定要禁用该账号吗？" @confirm="deleteUser(row._id)">
               <template #reference>
                 <el-button type="danger" link>禁用</el-button>
@@ -59,8 +60,8 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { getStaffList, addStaff, editStaff, disableStaff } from '../api/admin.js'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getStaffList, addStaff, editStaff, disableStaff, resetUserPassword } from '../api/admin.js'
 
 const users = ref([])
 const loading = ref(false)
@@ -170,6 +171,33 @@ const deleteUser = async (userId) => {
     await loadUsers()
   } catch (error) {
     ElMessage.error('操作失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+const confirmResetPassword = async (user) => {
+  if (!user) return
+  try {
+    await ElMessageBox.confirm(
+      `确定将${user.roleDisplay || '账号'} [${user.name || user.username}] 的密码重置为系统默认密码 123456 吗？`,
+      '重置密码确认',
+      {
+        confirmButtonText: '确认重置',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    loading.value = true
+    const token = localStorage.getItem('adminToken')
+    await resetUserPassword(token, user._id)
+    ElMessage.success('密码已重置为 123456，请提醒用户登录后立即修改密码')
+    await loadUsers()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '重置密码失败')
+    }
   } finally {
     loading.value = false
   }

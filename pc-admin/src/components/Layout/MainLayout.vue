@@ -13,6 +13,7 @@
         <el-menu-item index="faultdb"><el-icon><Warning /></el-icon><span>产品故障知识库</span></el-menu-item>
         <el-menu-item index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
         <el-menu-item index="feedback"><el-icon><ChatDotSquare /></el-icon><span>投诉与建议</span></el-menu-item>
+        <el-menu-item index="summary"><el-icon><DataAnalysis /></el-icon><span>服务数据总结</span></el-menu-item>
         <el-menu-item index="settings"><el-icon><Setting /></el-icon><span>小程序基础配置</span></el-menu-item>
       </el-menu>
     </div>
@@ -92,7 +93,7 @@
       </el-form>
       <template #footer>
         <el-button @click="pwdDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveNewPassword">确认修改</el-button>
+        <el-button type="primary" :loading="pwdSaving" @click="saveNewPassword">确认修改</el-button>
       </template>
     </el-dialog>
   </div>
@@ -102,6 +103,7 @@
 import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { changeMyPassword } from '../../api/admin.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -113,12 +115,13 @@ const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768
   if (!isMobile.value) sidebarOpen.value = false
 }
-onMounted(() => { checkMobile(); window.addEventListener('resize', checkMobile) })
+onMounted(() => { checkMobile(); syncProfileFromStorage(); window.addEventListener('resize', checkMobile) })
 onUnmounted(() => { window.removeEventListener('resize', checkMobile) })
 
 const menuTitles = {
   home: '工作台首页', workorder: '报修工单处理中心', faultdb: '产品分类与故障预设',
-  users: '用户管理', settings: '小程序图文及政策配置', feedback: '客户投诉与建议列表'
+  users: '用户管理', settings: '小程序图文及政策配置', feedback: '客户投诉与建议列表',
+  summary: '服务数据总结'
 }
 
 const getMenuFromPath = () => route.path.replace(/^\//, '') || 'home'
@@ -132,15 +135,42 @@ const handleMenuSelect = (index) => {
 }
 
 const handleLogout = () => {
+  localStorage.removeItem('adminToken')
+  localStorage.removeItem('adminUser')
   ElMessage.success('已安全退出系统')
   router.push('/login')
 }
 
 const profileDrawerVisible = ref(false)
-const profileForm = reactive({ username: 'admin', realName: '陈管理', phone: '13500000000', role: '管理员' })
+const roleMap = {
+  admin: '管理员',
+  engineer: '工程师'
+}
+const profileForm = reactive({
+  username: '',
+  realName: '',
+  phone: '',
+  role: ''
+})
+const syncProfileFromStorage = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('adminUser') || '{}')
+    profileForm.username = user.username || ''
+    profileForm.realName = user.name || ''
+    profileForm.phone = user.phone || ''
+    profileForm.role = user.roleDisplay || roleMap[user.role] || ''
+  } catch (error) {
+    localStorage.removeItem('adminUser')
+    profileForm.username = ''
+    profileForm.realName = ''
+    profileForm.phone = ''
+    profileForm.role = ''
+  }
+}
 const saveProfile = () => { profileDrawerVisible.value = false; ElMessage.success('个人信息更新成功') }
 
 const pwdDialogVisible = ref(false)
+const pwdSaving = ref(false)
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
 const openPwdDialog = () => {
@@ -150,15 +180,38 @@ const openPwdDialog = () => {
   pwdDialogVisible.value = true
 }
 
-const saveNewPassword = () => {
-  const currentPassword = localStorage.getItem('adminPwd') || 'admin123'
-  if (pwdForm.oldPassword !== currentPassword) { ElMessage.error('原密码不正确'); return }
-  if (!pwdForm.newPassword) { ElMessage.warning('请输入新密码'); return }
-  if (pwdForm.newPassword !== pwdForm.confirmPassword) { ElMessage.error('两次输入的新密码不一致'); return }
-  localStorage.setItem('adminPwd', pwdForm.newPassword)
-  pwdDialogVisible.value = false
-  ElMessage.success('密码修改成功，请使用新密码重新登录')
-  handleLogout()
+const saveNewPassword = async () => {
+  if (!pwdForm.oldPassword || !pwdForm.newPassword || !pwdForm.confirmPassword) {
+    ElMessage.warning('请完整填写密码信息')
+    return
+  }
+  if (pwdForm.newPassword.length < 6) {
+    ElMessage.warning('新密码至少需要 6 位')
+    return
+  }
+  if (pwdForm.newPassword === pwdForm.oldPassword) {
+    ElMessage.warning('新密码不能与原密码相同')
+    return
+  }
+  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+    ElMessage.error('两次输入的新密码不一致')
+    return
+  }
+
+  pwdSaving.value = true
+  try {
+    const token = localStorage.getItem('adminToken')
+    await changeMyPassword(token, pwdForm.oldPassword, pwdForm.newPassword)
+    pwdDialogVisible.value = false
+    localStorage.removeItem('adminToken')
+    localStorage.removeItem('adminUser')
+    ElMessage.success('密码修改成功，请使用新密码重新登录')
+    router.push('/login')
+  } catch (error) {
+    ElMessage.error(error.message || '密码修改失败')
+  } finally {
+    pwdSaving.value = false
+  }
 }
 </script>
 

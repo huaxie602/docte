@@ -1,5 +1,52 @@
 import { toChineseStatus } from './orderStatus.js'
 
+const normalizeUrlArray = (...values) => {
+  return values.reduce((urls, value) => {
+    if (Array.isArray(value)) {
+      return urls.concat(value)
+    }
+    if (value) {
+      urls.push(value)
+    }
+    return urls
+  }, []).filter(Boolean)
+}
+
+const normalizeOrderItems = (order) => {
+  const sourceItems = Array.isArray(order.itemsList) && order.itemsList.length
+    ? order.itemsList
+    : [{
+        product_name: order.product_name,
+        product_model: order.product_model,
+        sn: order.sn,
+        buy_date: order.buy_date,
+        fault_desc: order.fault_desc,
+        media_urls: order.media_urls
+      }]
+
+  return sourceItems.map((item = {}) => ({
+    _id: item._id,
+    product_name: item.product_name || '',
+    product_model: item.product_model || '',
+    sn: item.sn || '',
+    buy_date: item.buy_date || '',
+    fault_desc: item.fault_desc || '',
+    quantity: item.quantity || 1,
+    voucher_urls: normalizeUrlArray(item.voucher_urls, item.voucherUrls),
+    image_urls: normalizeUrlArray(item.image_urls, item.imageUrls),
+    video_urls: normalizeUrlArray(item.video_urls, item.videoUrls),
+    media_urls: normalizeUrlArray(item.media_urls, item.mediaUrls)
+  }))
+}
+
+const buildItemsSummary = (items) => {
+  return items.map((item, index) => {
+    const name = item.product_name || item.product_model || `产品${index + 1}`
+    const sn = item.sn ? `SN:${item.sn}` : ''
+    return [name, sn].filter(Boolean).join(' / ')
+  }).join('、')
+}
+
 // 后端工单数据转换为前端格式
 export const transformOrder = (order) => {
   if (!order) return null
@@ -7,18 +54,29 @@ export const transformOrder = (order) => {
   const shipOut = order.ship_out_info || {}
   const shipBack = order.ship_back_info || {}
   const invoiceInfo = order.invoice_info || {}
+  const itemsList = normalizeOrderItems(order)
+  const firstItem = itemsList[0] || {}
+  const images = normalizeUrlArray(
+    order.media_urls,
+    firstItem.media_urls,
+    ...itemsList.map(item => item.image_urls),
+    ...itemsList.map(item => item.video_urls)
+  )
 
   return {
     _id: order._id,
     id: order.order_no || order._id,
 
     // 报修方信息
-    clinicName: shipBack.name || '',
+    clinicName: shipBack.unit || '',
     customerName: shipBack.name || '',
     phone: shipBack.phone || '',
     address: `${shipBack.region || ''} ${shipBack.detail || ''}`.trim(),
 
     // 物流信息
+    senderName: shipOut.name || '',
+    senderPhone: shipOut.phone || '',
+    senderUnit: shipOut.unit || '',
     senderAddress: `${shipOut.region || ''} ${shipOut.detail || ''}`.trim(),
     returnAddress: `${shipBack.region || ''} ${shipBack.detail || ''}`.trim(),
     logisticsCompany: shipOut.logistics_company || '',
@@ -27,13 +85,16 @@ export const transformOrder = (order) => {
     returnNo: shipBack.logistics_no || '',
 
     // 产品信息（从工单项目中获取）
-    productModel: order.product_model || '',
-    productName: order.product_name || '',
-    fault: order.fault_desc || '',
-    images: order.media_urls || [],
-    itemsList: order.itemsList && order.itemsList.length > 0
-      ? order.itemsList.map(item => `${item.product_name || ''} x ${item.quantity || 1}`).join('、')
-      : '',
+    productModel: firstItem.product_model || order.product_model || '',
+    productName: firstItem.product_name || order.product_name || '',
+    fault: firstItem.fault_desc || order.fault_desc || '',
+    images,
+    itemsList,
+    itemsSummary: buildItemsSummary(itemsList),
+
+    // 备注隔离
+    adminRemark: order.admin_remark || '',
+    printRemark: order.print_remark || '',
 
     // 状态
     status: toChineseStatus(order.status),

@@ -37,6 +37,24 @@ export const batchImportReturnLogistics = (token, rows) => {
   })
 }
 
+// 批量回寄发货
+export const batchUpdateShipping = (token, shippingList) => {
+  return request.post(`${API_BASE.adminOrder}/batchUpdateShipping`, {
+    token,
+    shippingList
+  })
+}
+
+// 更新工单备注
+export const updateRemarks = (token, orderId, adminRemark, printRemark) => {
+  return request.post(`${API_BASE.adminOrder}/updateRemarks`, {
+    token,
+    orderId,
+    adminRemark,
+    printRemark
+  })
+}
+
 // 更新开票状态登记
 export const updateInvoiceStatus = (token, orderId, status, invoice = {}) => {
   return request.post(`${API_BASE.adminOrder}/updateInvoiceStatus`, {
@@ -60,4 +78,9 @@ export const addTimeline = (token, orderId, title, desc) => {
 // 获取统计数据
 export const getStatistics = (token) => {
   return request.post(`${API_BASE.adminOrder}/getStatistics`, { token })
+}
+
+// 获取服务数据总结
+export const getDashboardSummary = (token) => {
+  return request.post(`${API_BASE.adminOrder}/getDashboardSummary`, { token })
 }

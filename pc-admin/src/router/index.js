@@ -7,6 +7,7 @@ import FaultDB from '../views/FaultDB.vue'
 import Users from '../views/Users.vue'
 import Feedback from '../views/Feedback.vue'
 import Settings from '../views/Settings.vue'
+import Summary from '../views/Summary.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -22,6 +23,7 @@ const router = createRouter({
         { path: 'faultdb', name: 'FaultDB', component: FaultDB },
         { path: 'users', name: 'Users', component: Users },
         { path: 'feedback', name: 'Feedback', component: Feedback },
+        { path: 'summary', name: 'Summary', component: Summary },
         { path: 'settings', name: 'Settings', component: Settings },
       ]
     }
