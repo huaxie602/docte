@@ -1234,33 +1234,20 @@
 			<view class="vi-side-wordmark">
 				<text class="vi-en">CICADA</text><text class="vi-tm">®</text>
 			</view>
-			<text class="side-text">思科达官网</text>
+			<text class="side-text">思科达公众号</text>
 		</view>
 
 		<BottomTabbar v-if="showBottomTabbar" :tabs="tabs" :active-id="activeTab" @select="go" />
 
-		<view v-if="showOfficial" class="modal-mask" @click="showOfficial = false">
+		<view v-if="showOfficial" class="modal-mask">
 			<view class="official-modal" @click.stop>
 				<text class="modal-close tap" @click="showOfficial = false">×</text>
-				<view class="official-head">
-					<view class="official-logo">C</view>
-					<view class="official-title-wrap">
-						<text class="official-title">CICADA 思科达官网</text>
-						<text class="official-subtitle">佛山市思科达医疗器械</text>
-					</view>
+				<view class="qr-image-wrap company-qr">
+					<image class="qr-image" :src="wechatInfo.qrcodeUrl" mode="aspectFill" show-menu-by-longpress="true"></image>
 				</view>
-				<view class="official-tip">
-					<text>即将跳转至「</text>
-					<text class="official-tip-brand">CICADA 思科达官网</text>
-					<text>」小程序，浏览全品类产品、查看资质证书与最新动态。</text>
-				</view>
-				<view class="official-actions">
-					<view class="modal-btn modal-btn-ghost tap" @click="showOfficial = false">取消</view>
-					<view class="modal-btn modal-btn-primary tap" @click="goOfficial">
-						<view class="mini-icon mini-external"></view>
-						<text>立即前往</text>
-					</view>
-				</view>
+				<text class="follow-title">了解产品与售后支持</text>
+				<text class="follow-desc">长按识别二维码关注官方公众号，获取产品资料、维修保养与售后服务支持。</text>
+				<official-account class="official-account-btn"></official-account>
 			</view>
 		</view>
 
@@ -3482,11 +3469,6 @@ const handleSearch = () => {
 	})
 }
 
-const goOfficial = () => {
-	showOfficial.value = false
-	go('company')
-}
-
 onLoad((options = {}) => {
 	const type = Number(options.type)
 	const routeType = Number.isInteger(type) ? type : undefined
@@ -5646,7 +5628,31 @@ onMounted(() => {
 }
 
 .official-modal {
-	padding: 44rpx 44rpx 36rpx;
+	padding: 48rpx 36rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+}
+
+.follow-title {
+	margin-top: 32rpx;
+	font-size: 30rpx;
+	font-weight: 800;
+	color: #0F1F3A;
+}
+
+.follow-desc {
+	margin-top: 16rpx;
+	padding: 0 20rpx;
+	font-size: 24rpx;
+	line-height: 1.6;
+	color: #6B7C97;
+}
+
+.official-account-btn {
+	width: 100%;
+	margin-top: 32rpx;
 }
 
 .qr-modal {
@@ -5666,70 +5672,6 @@ onMounted(() => {
 	font-weight: 300;
 	line-height: 1;
 	color: #94A3B8;
-}
-
-.official-head {
-	margin-bottom: 28rpx;
-	display: flex;
-	align-items: center;
-	gap: 20rpx;
-}
-
-.official-logo {
-	width: 84rpx;
-	height: 84rpx;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-	border-radius: 20rpx;
-	background: linear-gradient(135deg, #3A86FF 0%, #0A4FB8 100%);
-	color: #FFFFFF;
-	font-family: Georgia, serif;
-	font-size: 36rpx;
-	font-weight: 800;
-	letter-spacing: 1rpx;
-}
-
-.official-title-wrap {
-	min-width: 0;
-	display: flex;
-	flex-direction: column;
-}
-
-.official-title {
-	font-size: 28rpx;
-	font-weight: 700;
-	line-height: 1.25;
-	color: #0F1F3A;
-}
-
-.official-subtitle {
-	margin-top: 4rpx;
-	font-size: 22rpx;
-	line-height: 1.3;
-	color: #94A3B8;
-}
-
-.official-tip {
-	padding: 28rpx;
-	border-radius: 24rpx;
-	background: #F3F8FF;
-	font-size: 24rpx;
-	line-height: 1.7;
-	color: #324563;
-}
-
-.official-tip-brand {
-	font-weight: 700;
-	color: #1E6FE0;
-}
-
-.official-actions {
-	margin-top: 28rpx;
-	display: flex;
-	align-items: center;
-	gap: 20rpx;
 }
 
 .modal-btn {
