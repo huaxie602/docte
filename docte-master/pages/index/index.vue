@@ -1234,33 +1234,20 @@
 			<view class="vi-side-wordmark">
 				<text class="vi-en">CICADA</text><text class="vi-tm">®</text>
 			</view>
-			<text class="side-text">思科达官网</text>
+			<text class="side-text">思科达公众号</text>
 		</view>
 
 		<BottomTabbar v-if="showBottomTabbar" :tabs="tabs" :active-id="activeTab" @select="go" />
 
-		<view v-if="showOfficial" class="modal-mask" @click="showOfficial = false">
+		<view v-if="showOfficial" class="modal-mask">
 			<view class="official-modal" @click.stop>
 				<text class="modal-close tap" @click="showOfficial = false">×</text>
-				<view class="official-head">
-					<view class="official-logo">C</view>
-					<view class="official-title-wrap">
-						<text class="official-title">CICADA 思科达官网</text>
-						<text class="official-subtitle">佛山市思科达医疗器械</text>
-					</view>
+				<view class="qr-image-wrap company-qr">
+					<image class="qr-image" :src="wechatInfo.qrcodeUrl" mode="aspectFill" show-menu-by-longpress="true"></image>
 				</view>
-				<view class="official-tip">
-					<text>即将跳转至「</text>
-					<text class="official-tip-brand">CICADA 思科达官网</text>
-					<text>」小程序，浏览全品类产品、查看资质证书与最新动态。</text>
-				</view>
-				<view class="official-actions">
-					<view class="modal-btn modal-btn-ghost tap" @click="showOfficial = false">取消</view>
-					<view class="modal-btn modal-btn-primary tap" @click="goOfficial">
-						<view class="mini-icon mini-external"></view>
-						<text>立即前往</text>
-					</view>
-				</view>
+				<text class="follow-title">了解产品与售后支持</text>
+				<text class="follow-desc">长按识别二维码关注官方公众号，获取产品资料、维修保养与售后服务支持。</text>
+				<official-account class="official-account-btn"></official-account>
 			</view>
 		</view>
 
@@ -1314,7 +1301,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app'
 import BottomTabbar from '@/components/BottomTabbar.vue'
 import { cicadaAssets } from '@/config/cicada-assets'
 import {
@@ -1988,8 +1975,8 @@ const normalizeOrder = (item = {}) => {
 		tone: 'muted',
 		reached: Math.max(0, repairStatusFlow.indexOf(statusText))
 	}
-	const orderId = item.orderNo || item.orderId || item.id || item._id || ''
-	const createTime = item.createTime || item.createdAt || item.date || ''
+	const orderId = item.order_no || item.orderNo || item.orderId || item.id || item._id || ''
+	const createTime = item.create_time || item.createTime || item.createdAt || item.date || ''
 	const updateTime = item.updateTime || item.updatedAt || createTime
 	const localPatch = orderLocalPatches.value[orderId] || {}
 	const merged = { ...item, ...localPatch }
@@ -2000,7 +1987,7 @@ const normalizeOrder = (item = {}) => {
 
 	return {
 		id: orderId,
-		model: merged.productModel || merged.productName || merged.model || merged.deviceName || '维修设备',
+		model: (Array.isArray(merged.items) && merged.items[0] && (merged.items[0].product_name || merged.items[0].productName)) || merged.productModel || merged.productName || merged.model || merged.deviceName || '维修设备',
 		status: statusText,
 		statusGroup: meta.statusGroup,
 		tone: meta.tone,
@@ -3083,7 +3070,8 @@ const submitRepair = async () => {
 	repairSubmitting.value = true
 	try {
 		const res = await submitRepairOrder(buildRepairPayload())
-		submittedOrderId.value = res && (res.orderNo || res.orderId || res.id) ? (res.orderNo || res.orderId || res.id) : ''
+		const resData = (res && res.data) ? res.data : (res || {})
+		submittedOrderId.value = resData.order_no || resData.orderNo || resData.orderId || resData.id || ''
 		uni.removeStorageSync(repairDraftKey)
 		openModule('repair-success')
 		loadRemoteContent()
@@ -3482,11 +3470,6 @@ const handleSearch = () => {
 	})
 }
 
-const goOfficial = () => {
-	showOfficial.value = false
-	go('company')
-}
-
 onLoad((options = {}) => {
 	const type = Number(options.type)
 	const routeType = Number.isInteger(type) ? type : undefined
@@ -3498,6 +3481,23 @@ onLoad((options = {}) => {
 
 	if (routeType !== undefined) {
 		openModule('orders', routeType)
+	}
+})
+
+onShow(() => {
+	logBoot('onShow triggered')
+	// 每次切回页面都自动重新拉取一次最新的后端数据
+	if (pageBootReady.value) {
+		loadRemoteContent()
+	}
+})
+
+onPullDownRefresh(async () => {
+	logBoot('onPullDownRefresh triggered')
+	try {
+		await loadRemoteContent()
+	} finally {
+		uni.stopPullDownRefresh()
 	}
 })
 
@@ -3554,7 +3554,7 @@ const loadRemoteContent = async () => {
 			.catch((error) => console.warn('product list failed:', error)),
 		getRepairList({ page: 1, size: 30 })
 			.then((data = {}) => {
-				const list = Array.isArray(data) ? data : data.list
+				const list = Array.isArray(data) ? data : (data.list || data.data || [])
 				if (!Array.isArray(list)) return
 				orderLocalPatches.value = readStorage(localOrderPatchKey, orderLocalPatches.value || {})
 				const normalized = list.map(normalizeOrder).filter((item) => item.id)
@@ -5629,7 +5629,31 @@ onMounted(() => {
 }
 
 .official-modal {
-	padding: 44rpx 44rpx 36rpx;
+	padding: 48rpx 36rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+}
+
+.follow-title {
+	margin-top: 32rpx;
+	font-size: 30rpx;
+	font-weight: 800;
+	color: #0F1F3A;
+}
+
+.follow-desc {
+	margin-top: 16rpx;
+	padding: 0 20rpx;
+	font-size: 24rpx;
+	line-height: 1.6;
+	color: #6B7C97;
+}
+
+.official-account-btn {
+	width: 100%;
+	margin-top: 32rpx;
 }
 
 .qr-modal {
@@ -5649,70 +5673,6 @@ onMounted(() => {
 	font-weight: 300;
 	line-height: 1;
 	color: #94A3B8;
-}
-
-.official-head {
-	margin-bottom: 28rpx;
-	display: flex;
-	align-items: center;
-	gap: 20rpx;
-}
-
-.official-logo {
-	width: 84rpx;
-	height: 84rpx;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-	border-radius: 20rpx;
-	background: linear-gradient(135deg, #3A86FF 0%, #0A4FB8 100%);
-	color: #FFFFFF;
-	font-family: Georgia, serif;
-	font-size: 36rpx;
-	font-weight: 800;
-	letter-spacing: 1rpx;
-}
-
-.official-title-wrap {
-	min-width: 0;
-	display: flex;
-	flex-direction: column;
-}
-
-.official-title {
-	font-size: 28rpx;
-	font-weight: 700;
-	line-height: 1.25;
-	color: #0F1F3A;
-}
-
-.official-subtitle {
-	margin-top: 4rpx;
-	font-size: 22rpx;
-	line-height: 1.3;
-	color: #94A3B8;
-}
-
-.official-tip {
-	padding: 28rpx;
-	border-radius: 24rpx;
-	background: #F3F8FF;
-	font-size: 24rpx;
-	line-height: 1.7;
-	color: #324563;
-}
-
-.official-tip-brand {
-	font-weight: 700;
-	color: #1E6FE0;
-}
-
-.official-actions {
-	margin-top: 28rpx;
-	display: flex;
-	align-items: center;
-	gap: 20rpx;
 }
 
 .modal-btn {
@@ -6632,18 +6592,52 @@ onMounted(() => {
 
 .media-thumb,
 .media-add {
+	position: relative;
 	width: 148rpx;
 	height: 148rpx;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	border-radius: 16rpx;
+	overflow: hidden;
 	box-sizing: border-box;
 }
 
 .media-thumb {
-	background: linear-gradient(135deg, #BFD6F7 0%, #1E6FE0 100%);
+	background: #F3F8FF;
 	color: #FFFFFF;
+}
+
+.media-image {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.media-video {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8rpx;
+	color: #1E6FE0;
+}
+
+.media-remove {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 40rpx;
+	height: 40rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.5);
+	color: #FFFFFF;
+	font-size: 32rpx;
+	font-weight: 700;
+	line-height: 1;
+	z-index: 2;
 }
 
 .media-add {
