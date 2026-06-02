@@ -1,0 +1,13 @@
+{
+  "bsonType": "object",
+  "required": ["category", "desc", "file_name"],
+  "properties": {
+    "_id": { "description": "ID" },
+    "category": { "bsonType": "string" },
+    "desc": { "bsonType": "string" },
+    "file_name": { "bsonType": "string" },
+    "file_url": { "bsonType": "string" },
+    "sort": { "bsonType": "int" },
+    "update_time": { "bsonType": "timestamp" }
+  }
+}
