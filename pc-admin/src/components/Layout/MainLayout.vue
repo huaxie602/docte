@@ -4,8 +4,7 @@
 
     <div class="sidebar" :class="{ 'open': sidebarOpen }">
       <div class="sidebar-logo">
-        <img src="https://dummyimage.com/100x30/165DFF/ffffff.png&text=CICADA" alt="logo" style="border-radius:4px;">
-        <span>后台管理</span>
+        <img src="/brand/cicada-admin-logo.png" alt="CICADA 思科达">
       </div>
       <el-menu :default-active="activeMenu" class="el-menu-vertical" @select="handleMenuSelect">
         <el-menu-item index="home"><el-icon><HomeFilled /></el-icon><span>工作台首页</span></el-menu-item>
@@ -221,10 +220,9 @@ const saveNewPassword = async () => {
 .mobile-mask { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1000; transition: opacity 0.3s; opacity: 0; }
 .mobile-mask.show { display: block; opacity: 1; }
 
-.sidebar { width: var(--sidebar-width); background: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.02); z-index: 1001; transition: transform 0.3s ease; flex-shrink: 0; }
-.sidebar-logo { height: 60px; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid #f0f2f5; flex-shrink: 0; }
-.sidebar-logo img { height: 24px; margin-right: 10px; }
-.sidebar-logo span { font-size: 18px; font-weight: 600; color: #1d2129; letter-spacing: 1px; white-space: nowrap; }
+.sidebar { width: var(--sidebar-width, 220px); background: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.02); z-index: 1001; transition: transform 0.3s ease; flex-shrink: 0; }
+.sidebar-logo { height: 60px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid #f0f2f5; flex-shrink: 0; }
+.sidebar-logo img { width: 100%; max-width: 184px; height: auto; display: block; object-fit: contain; }
 .el-menu-vertical { border-right: none; flex: 1; padding: 10px; overflow-y: auto; }
 
 .main-container { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }

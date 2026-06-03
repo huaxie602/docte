@@ -2,20 +2,32 @@
 
 // 后端状态到前端中文
 export const STATUS_MAP = {
-  'pending': '待处理',
-  'received': '待处理',
-  'inspecting': '维修中',
-  'fixing': '维修中',
-  'shipped': '已发货',
-  'completed': '已处理',
-  'cancelled': '已取消'
+  'pending': '已提交',
+  'sent': '运输中',
+  'received': '已签收',
+  'inspecting': '处理中',
+  'fixing': '处理中',
+  'processing': '处理中',
+  'shipped': '已回寄',
+  'completed': '已完成',
+  'cancelled': '已取消',
+  '待处理': '已提交',
+  '维修中': '处理中',
+  '已发货': '已回寄',
+  '已处理': '已完成'
 }
 
 // 前端中文到后端状态
 export const STATUS_REVERSE_MAP = {
   '待处理': 'pending',
-  '维修中': 'fixing',
+  '已提交': 'pending',
+  '运输中': 'sent',
+  '已签收': 'received',
+  '处理中': 'processing',
+  '维修中': 'processing',
+  '已回寄': 'shipped',
   '已发货': 'shipped',
+  '已完成': 'completed',
   '已处理': 'completed',
   '已取消': 'cancelled'
 }
@@ -23,9 +35,11 @@ export const STATUS_REVERSE_MAP = {
 // 状态对应的标签类型
 export const STATUS_TAG_TYPE = {
   'pending': 'info',
+  'sent': 'warning',
   'received': 'warning',
   'inspecting': 'primary',
   'fixing': 'primary',
+  'processing': 'primary',
   'shipped': 'success',
   'completed': 'success',
   'cancelled': 'danger'

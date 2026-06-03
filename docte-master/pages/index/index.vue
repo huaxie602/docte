@@ -234,7 +234,7 @@
 				<view class="track-search-wrap">
 					<view class="track-search">
 						<view class="glyph glyph-search glyph-search-small"><view class="glyph-extra"></view></view>
-						<input v-model.trim="trackSearchKeyword" placeholder="输入工单号 / 产品序列号查询" placeholder-class="input-placeholder" confirm-type="search" />
+						<input v-model.trim="trackSearchKeyword" placeholder="输入工单号 / 产品名称 / 序列号查询" placeholder-class="input-placeholder" confirm-type="search" />
 					</view>
 				</view>
 				<scroll-view class="progress-tabs-line progress-tabs-compact" scroll-x show-scrollbar="false" enhanced>
@@ -1500,8 +1500,8 @@ const companyServiceTags = ['及时售后', '临床培训', '全球服务网络'
 const defaultStatusItems = [
 	{ id: 'all', title: '全部', count: 0, color: '#1E6FE0', bg: 'rgba(30, 111, 224, 0.09)', icon: 'invoice', type: 0 },
 	{ id: 'pending', title: '待处理', count: 0, color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.09)', icon: 'track', type: 'pending' },
-	{ id: 'fixing', title: '维修中', count: 0, color: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.09)', icon: 'repair', type: '维修中' },
-	{ id: 'shipped', title: '已发货', count: 0, color: '#10B981', bg: 'rgba(16, 185, 129, 0.09)', icon: 'truck', type: '已发货' }
+	{ id: 'fixing', title: '处理中', count: 0, color: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.09)', icon: 'repair', type: '处理中' },
+	{ id: 'shipped', title: '已回寄', count: 0, color: '#10B981', bg: 'rgba(16, 185, 129, 0.09)', icon: 'truck', type: '已回寄' }
 ]
 
 const menus = [
@@ -1526,7 +1526,7 @@ const tabRoutes = {
 const moduleMap = {
 	repair: { title: '立即报修', subtitle: '填写寄出信息、产品信息与寄回信息' },
 	'repair-success': { title: '提交成功', subtitle: '工程师已收到您的报修申请' },
-	track: { title: '维修进度', subtitle: '按标准售后节点查看维修闭环进度' },
+	track: { title: '维修进度', subtitle: '查看提交、物流、处理与回寄状态' },
 	'package-query': { title: '包裹查询', subtitle: '按快递单号查询是否签收和当前处理状态' },
 	'order-detail': { title: '工单详情', subtitle: '维修时间线与发票进度' },
 	survey: { title: '调研有礼', subtitle: '扫码参与调研，领取专属维保福利' },
@@ -1552,12 +1552,12 @@ const moduleHeadStyle = computed(() => ({
 }))
 const showBottomTabbar = computed(() => pageBootReady.value && !diagOpen.value && activeModule.value !== 'survey' && activeModule.value !== 'repair')
 
-const repairStatusFlow = ['已提交', '已寄出', '已签收', '检测中', '待报价', '待确认', '维修中', '已发货', '已完成', '已评价']
-const pendingRepairStatuses = ['已提交', '已寄出', '已签收', '检测中', '待报价', '待确认']
+const repairStatusFlow = ['已提交', '运输中', '已签收', '处理中', '已回寄', '已完成']
+const pendingRepairStatuses = ['已提交', '运输中', '已签收']
 
 const progressTabs = ['全部', ...repairStatusFlow]
 
-const repairFlow = ['提交', '寄出', '签收', '检测', '报价', '确认', '维修', '发货', '完成', '评价']
+const repairFlow = ['提交', '运输', '签收', '处理', '回寄', '完成']
 
 const packageFlow = ['待签收', '已签收', '已登记', '处理中', '已关联']
 
@@ -1684,7 +1684,7 @@ const docFallbacks = {
 		sections: [
 			{ title: '一、故障自查', marker: 'a)', lines: ['点击首页「故障自查」或在导航栏选择「操作指南」。', '选择产品类型，按照指引进行故障排查，即可获得初步解决方案。'] },
 			{ title: '二、如何报修', marker: 'b)', lines: ['点击首页「立即报修」进入报修表单。', '填写产品信息、故障描述、上传附件图片，点击提交完成报修。', '提交后可获得工单号，用于后续进度查询。'] },
-			{ title: '三、维修进度查询', marker: 'c)', lines: ['在首页或「维修进度」页面输入工单号查询。', '维修状态会实时更新，包括：已接单、检测中、维修中、已发货等状态。'] },
+			{ title: '三、维修进度查询', marker: 'c)', lines: ['在首页或「维修进度」页面输入工单号查询。', '维修状态会实时更新，包括：已提交、运输中、已签收、处理中、已回寄、已完成等状态。'] },
 			{ title: '四、自助开票', marker: 'd)', lines: ['维修完成后，在「我的订单」中选择开票。', '选择发票类型，填写开票信息后提交。'] }
 		]
 	},
@@ -1891,30 +1891,37 @@ const applyContact = (data = {}) => {
 
 const repairStatusAliases = {
 	0: '已提交',
-	1: '维修中',
-	2: '已发货',
+	1: '处理中',
+	2: '已回寄',
 	3: '已完成',
 	submitted: '已提交',
 	created: '已提交',
 	pending: '已提交',
-	sent: '已寄出',
-	mailed: '已寄出',
+	sent: '运输中',
+	mailed: '运输中',
 	received: '已签收',
 	signed: '已签收',
-	checking: '检测中',
-	inspecting: '检测中',
-	quoted: '待报价',
-	quote_pending: '待报价',
-	waiting_quote: '待报价',
-	confirming: '待确认',
-	waiting_confirm: '待确认',
-	fixing: '维修中',
-	repairing: '维修中',
-	shipped: '已发货',
+	checking: '处理中',
+	inspecting: '处理中',
+	quoted: '处理中',
+	quote_pending: '处理中',
+	waiting_quote: '处理中',
+	confirming: '处理中',
+	waiting_confirm: '处理中',
+	fixing: '处理中',
+	repairing: '处理中',
+	shipped: '已回寄',
 	completed: '已完成',
 	done: '已完成',
-	reviewed: '已评价',
-	rated: '已评价',
+	reviewed: '已完成',
+	rated: '已完成',
+	已寄出: '运输中',
+	检测中: '处理中',
+	待报价: '处理中',
+	待确认: '处理中',
+	维修中: '处理中',
+	已发货: '已回寄',
+	已评价: '已完成',
 	cancelled: '已取消',
 	canceled: '已取消'
 }
@@ -1934,6 +1941,13 @@ const repairStatusMeta = repairStatusFlow.reduce((acc, label, index) => {
 const normalizeRepairStatus = (value, fallback = '已提交') => {
 	const raw = value === undefined || value === null ? '' : String(value).trim()
 	if (!raw) return fallback
+	return repairStatusAliases[raw] || repairStatusAliases[raw.toLowerCase()] || raw
+}
+
+const normalizeStatusTab = (value) => {
+	const raw = value === undefined || value === null ? '' : String(value).trim()
+	if (!raw || raw === '全部') return raw || '全部'
+	if (raw === 'pending' || raw === '待处理') return '待处理'
 	return repairStatusAliases[raw] || repairStatusAliases[raw.toLowerCase()] || raw
 }
 
@@ -1966,8 +1980,8 @@ const formatOrderListPrice = (order = {}) => {
 }
 
 const getOrderStatusTone = (order = {}) => {
-	if (order.statusGroup === '维修中') return 'warn'
-	if (order.statusGroup === '已发货' || order.statusGroup === '已完成' || order.statusGroup === '已评价') return 'ok'
+	if (order.statusGroup === '处理中') return 'warn'
+	if (order.statusGroup === '已回寄' || order.statusGroup === '已完成') return 'ok'
 	if (order.statusGroup === '已取消') return 'muted'
 	return order.tone || 'info'
 }
@@ -2012,6 +2026,7 @@ const normalizeOrder = (item = {}) => {
 	return {
 		id: orderId,
 		recordId: merged._id || merged.id || '',
+		items: orderItems,
 		productName,
 		product_name: productName,
 		productModel,
@@ -2070,7 +2085,7 @@ const writeStorage = (key, value) => {
 }
 
 const createDemoQuoteItems = (item = {}) => {
-	const isQuoteStage = ['待确认', '维修中', '已发货', '已完成', '已评价'].includes(item.statusGroup || item.status)
+	const isQuoteStage = ['处理中', '已回寄', '已完成'].includes(item.statusGroup || item.status)
 	if (!isQuoteStage) return []
 	return [
 		{ name: '故障检测与清洁', desc: '拆机检测、清洁消毒与基础调试', partsFee: 0, laborFee: 80 },
@@ -2230,8 +2245,8 @@ const statusItems = computed(() => {
 		(acc, item) => {
 			acc.all += 1
 			if (pendingRepairStatuses.includes(item.statusGroup)) acc.pending += 1
-			if (item.statusGroup === '维修中') acc.fixing += 1
-			if (item.statusGroup === '已发货') acc.shipped += 1
+			if (item.statusGroup === '处理中') acc.fixing += 1
+			if (item.statusGroup === '已回寄') acc.shipped += 1
 			return acc
 		},
 		{ all: 0, pending: 0, fixing: 0, shipped: 0 }
@@ -2248,8 +2263,8 @@ const countOrdersByStatus = (status) => orderList.value.filter((item) => item.st
 const orderTabs = computed(() => [
 	{ key: '全部', label: '全部', count: orderList.value.length },
 	{ key: '待处理', label: '待处理', count: orderList.value.filter((item) => pendingRepairStatuses.includes(item.statusGroup)).length },
-	{ key: '维修中', label: '维修中', count: countOrdersByStatus('维修中') },
-	{ key: '已发货', label: '已发货', count: countOrdersByStatus('已发货') },
+	{ key: '处理中', label: '处理中', count: countOrdersByStatus('处理中') },
+	{ key: '已回寄', label: '已回寄', count: countOrdersByStatus('已回寄') },
 	{ key: '未开票', label: '未开票', count: orderList.value.filter((item) => invoiceTodoStatusKeys.includes(getInvoiceStatusKey(item))).length },
 	{ key: '已开票', label: '已开票', count: orderList.value.filter((item) => getInvoiceStatusKey(item) === 'issued').length }
 ])
@@ -2325,7 +2340,18 @@ const filteredTrackOrders = computed(() => {
 		const statusMatched = activeTrackTab.value === '全部' || item.statusGroup === activeTrackTab.value
 		if (!statusMatched) return false
 		if (!keyword) return true
-		const searchable = [item.id, item.model, item.productName, item.productModel, item.serial, item.productSerial, item.trackingNo]
+		const itemSearchable = Array.isArray(item.items)
+			? item.items.flatMap((product = {}) => [
+				product.product_name,
+				product.productName,
+				product.product_model,
+				product.productModel,
+				product.sn,
+				product.serial,
+				product.productSerial
+			])
+			: []
+		const searchable = [item.id, item.model, item.productName, item.productModel, item.serial, item.productSerial, item.trackingNo, ...itemSearchable]
 			.filter(Boolean)
 			.join(' ')
 			.toLowerCase()
@@ -2572,7 +2598,7 @@ function getInvoiceStatusKey(order = {}) {
 	if (order.invoiceStatus) return order.invoiceStatus
 	if (order.invoiced) return 'issued'
 	if (order.status === '已取消') return 'disabled'
-	if (['已完成', '已评价'].includes(order.statusGroup) || ['已完成', '已评价'].includes(order.status)) return 'available'
+	if (order.statusGroup === '已完成' || ['已完成', '已评价'].includes(order.status)) return 'available'
 	return 'unavailable'
 }
 
@@ -2787,9 +2813,9 @@ const openModule = (id, type) => {
 	}
 
 	if (id === 'orders' && type !== undefined) {
-		const typeMap = ['全部', '待处理', '维修中', '已发货', '未开票', '已开票']
+		const typeMap = ['全部', '待处理', '处理中', '已回寄', '未开票', '已开票']
 		if (typeof type === 'string') {
-			activeOrdersTab.value = type === 'pending' ? '待处理' : type
+			activeOrdersTab.value = normalizeStatusTab(type)
 		} else if (typeMap[type]) {
 			activeOrdersTab.value = typeMap[type]
 		}
