@@ -757,7 +757,11 @@
 					<view v-for="order in filteredOrderList" :key="order.id" class="order-card-mini order-card-classic tap" @click="openOrderDetail(order)">
 						<view class="order-card-main">
 							<text class="muted-line">工单 {{ order.id }}</text>
-							<text class="order-card-title">{{ order.model }}</text>
+							<text class="order-card-title">{{ order.cardTitle }}</text>
+							<text v-if="order.faultDesc" class="order-card-fault">{{ order.faultDesc }}</text>
+							<view v-if="order.cardMeta && order.cardMeta.length" class="order-card-meta">
+								<text v-for="meta in order.cardMeta" :key="meta">{{ meta }}</text>
+							</view>
 							<text class="order-card-date">报修日期 · {{ order.date }}</text>
 						</view>
 						<view class="order-card-side">
@@ -1326,6 +1330,7 @@ import {
 	uploadVideo
 } from '@/api/content'
 import {
+	getRepairDetail,
 	getRepairList,
 	submitRepair as submitRepairOrder
 } from '@/api/repair'
@@ -1980,6 +1985,25 @@ const normalizeOrder = (item = {}) => {
 	const updateTime = item.updateTime || item.updatedAt || createTime
 	const localPatch = orderLocalPatches.value[orderId] || {}
 	const merged = { ...item, ...localPatch }
+	const orderItems = Array.isArray(merged.items)
+		? merged.items
+		: (Array.isArray(merged.itemsList) ? merged.itemsList : [])
+	const firstItem = orderItems[0] || {}
+	const rawProductName = firstItem.product_name || firstItem.productName || merged.product_name || merged.productName || merged.deviceName || ''
+	const genericProductNames = ['维修产品', '维修设备', '未命名设备']
+	const productName = rawProductName && !genericProductNames.includes(rawProductName) ? rawProductName : ''
+	const productModel = firstItem.product_model || firstItem.productModel || merged.product_model || merged.productModel || merged.model || ''
+	const productSerial = firstItem.sn || firstItem.serial || firstItem.productSerial || merged.sn || merged.serial || merged.productSerial || ''
+	const faultDesc = firstItem.fault_desc || firstItem.faultDesc || merged.fault_desc || merged.faultDesc || merged.fault || ''
+	const shipOutInfo = merged.ship_out_info || merged.shipOutInfo || {}
+	const logisticsCompany = shipOutInfo.logistics_company || shipOutInfo.logisticsCompany || merged.logisticsCompany || ''
+	const trackingNo = shipOutInfo.logistics_no || shipOutInfo.logisticsNo || merged.trackingNo || merged.logisticsNo || merged.expressNo || ''
+	const cardTitle = productName || productModel || (productSerial ? `SN ${productSerial}` : '') || '设备信息待同步'
+	const cardMeta = [
+		productModel && productModel !== cardTitle ? `型号 ${productModel}` : '',
+		productSerial && `SN ${productSerial}`,
+		trackingNo && `寄出 ${logisticsCompany ? `${logisticsCompany} ` : ''}${trackingNo}`
+	].filter(Boolean)
 	const quoteItems = normalizeQuoteItems({ ...merged, status: statusText, statusGroup: meta.statusGroup })
 	const partsFee = Number(merged.partsFee ?? merged.materialFee ?? merged.quote?.partsFee ?? sumQuoteFee(quoteItems, 'partsFee')) || 0
 	const laborFee = Number(merged.laborFee ?? merged.workFee ?? merged.quote?.laborFee ?? sumQuoteFee(quoteItems, 'laborFee')) || 0
@@ -1987,7 +2011,20 @@ const normalizeOrder = (item = {}) => {
 
 	return {
 		id: orderId,
-		model: (Array.isArray(merged.items) && merged.items[0] && (merged.items[0].product_name || merged.items[0].productName)) || merged.productModel || merged.productName || merged.model || merged.deviceName || '维修设备',
+		recordId: merged._id || merged.id || '',
+		productName,
+		product_name: productName,
+		productModel,
+		product_model: productModel,
+		productSerial,
+		serial: productSerial,
+		faultDesc,
+		fault_desc: faultDesc,
+		logisticsCompany,
+		trackingNo,
+		cardTitle,
+		cardMeta,
+		model: cardTitle,
 		status: statusText,
 		statusGroup: meta.statusGroup,
 		tone: meta.tone,
@@ -2288,7 +2325,7 @@ const filteredTrackOrders = computed(() => {
 		const statusMatched = activeTrackTab.value === '全部' || item.statusGroup === activeTrackTab.value
 		if (!statusMatched) return false
 		if (!keyword) return true
-		const searchable = [item.id, item.model, item.serial, item.productSerial, item.trackingNo]
+		const searchable = [item.id, item.model, item.productName, item.productModel, item.serial, item.productSerial, item.trackingNo]
 			.filter(Boolean)
 			.join(' ')
 			.toLowerCase()
@@ -2303,6 +2340,34 @@ const filteredOrderList = computed(() => {
 	if (matchedStatus) return orderList.value.filter((item) => item.statusGroup === matchedStatus)
 	return orderList.value
 })
+
+const mergeOrderDetailItems = (orders = [], details = []) => {
+	const detailMap = details.reduce((map, detail) => {
+		if (!detail || !detail.id) return map
+		map[detail.id] = detail
+		return map
+	}, {})
+	return orders.map((order) => detailMap[order.id] ? { ...order, ...detailMap[order.id] } : order)
+}
+
+const hydrateOrderDetails = async (orders = []) => {
+	const pendingOrders = orders.filter((order) => order && order.recordId && !order.productName && !order.productModel && !order.productSerial)
+	if (!pendingOrders.length) return
+
+	const detailResults = await Promise.allSettled(
+		pendingOrders.slice(0, 8).map((order) => getRepairDetail(order.recordId))
+	)
+	const details = detailResults
+		.filter((result) => result.status === 'fulfilled')
+		.map((result) => normalizeOrder(result.value))
+		.filter((order) => order.id)
+	if (!details.length) return
+
+	const applyDetails = (list) => mergeOrderDetailItems(list, details)
+	orderList.value = applyDetails(orderList.value)
+	trackOrders.value = applyDetails(trackOrders.value)
+}
+
 const detailOrder = computed(() => {
 	const sourceId = trackDetailOrder.value || orderDetailOrder.value
 	return (
@@ -2857,6 +2922,8 @@ const getPreviewUrl = (item = {}) => {
 	return isCloudFileId(url) ? (item.path || '') : url
 }
 const getUploadedUrl = (item = {}) => item.fileID || item.fileId || item.cloudUrl || item.url || item.path || ''
+const isAuthError = (error = {}) => /鉴权失败|Token|token/i.test(String(error.message || error.errMsg || ''))
+const hasLoginToken = () => Boolean(uni.getStorageSync('token'))
 
 const uploadRepairImage = async (index) => {
 	const product = repairProducts.value[index]
@@ -3065,6 +3132,11 @@ const validateRepairForm = () => {
 
 const submitRepair = async () => {
 	if (repairSubmitting.value) return
+	if (!hasLoginToken()) {
+		openModule('login')
+		uni.showToast({ title: '请先登录后再提交报修', icon: 'none' })
+		return
+	}
 	if (!validateRepairForm()) return
 
 	repairSubmitting.value = true
@@ -3076,6 +3148,12 @@ const submitRepair = async () => {
 		openModule('repair-success')
 		loadRemoteContent()
 	} catch (error) {
+		if (isAuthError(error)) {
+			logoutLocal()
+			openModule('login')
+			uni.showToast({ title: '登录已失效，请重新登录', icon: 'none' })
+			return
+		}
 		console.warn('submit repair failed:', error)
 		uni.showToast({ title: error.message || '报修接口暂未开放，已保留草稿', icon: 'none' })
 	} finally {
@@ -3357,7 +3435,11 @@ const onGetPhoneNumberLogin = async (event) => {
 	}
 
 	try {
-		const res = await wechatLogin({ code: event.detail.code })
+		const loginRes = await uni.login({ provider: 'weixin' })
+		if (!loginRes.code) {
+			throw new Error('获取微信登录凭证失败')
+		}
+		const res = await wechatLogin({ code: loginRes.code, phoneCode: event.detail.code })
 		if (applyLoginSession(res)) {
 			uni.showToast({ title: '登录成功', icon: 'success' })
 		}
@@ -3560,6 +3642,7 @@ const loadRemoteContent = async () => {
 				const normalized = list.map(normalizeOrder).filter((item) => item.id)
 				orderList.value = normalized
 				trackOrders.value = normalized
+				hydrateOrderDetails(normalized).catch((error) => console.warn('repair detail hydrate failed:', error))
 			})
 			.catch((error) => console.warn('repair list failed:', error))
 	]
@@ -9414,10 +9497,48 @@ onMounted(() => {
 }
 
 .order-card-title {
+	display: block;
+	max-width: 100%;
 	font-size: 28rpx;
 	font-weight: 700;
 	line-height: 1.35;
 	color: #0F1F3A;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.order-card-fault {
+	display: block;
+	max-width: 100%;
+	font-size: 23rpx;
+	line-height: 1.35;
+	color: #6B7C97;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.order-card-meta {
+	max-width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 12rpx;
+	overflow: hidden;
+}
+
+.order-card-meta text {
+	min-width: 0;
+	max-width: 100%;
+	padding: 4rpx 10rpx;
+	border-radius: 999rpx;
+	background: #F3F8FF;
+	color: #5A6C8D;
+	font-size: 21rpx;
+	line-height: 1.25;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .order-card-date {

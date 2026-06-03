@@ -154,7 +154,32 @@ module.exports = {
         .skip((pagination.page - 1) * pagination.pageSize)
         .limit(pagination.pageSize)
         .get()
-      return { code: 0, data: res.data }
+
+      const orders = await Promise.all(res.data.map(async order => {
+        const itemKeys = [order._id, order.order_no].filter(Boolean)
+        const itemRes = itemKeys.length
+          ? await db.collection('cicada_order_items')
+            .where({ order_id: db.command.in(itemKeys) })
+            .limit(20)
+            .get()
+          : { data: [] }
+        const items = itemRes.data || []
+        const firstItem = items[0] || {}
+        const shipOutInfo = order.ship_out_info || {}
+        return {
+          ...order,
+          items,
+          product_name: firstItem.product_name || '',
+          product_model: firstItem.product_model || '',
+          fault_desc: firstItem.fault_desc || '',
+          sn: firstItem.sn || '',
+          buy_date: firstItem.buy_date || '',
+          logistics_company: shipOutInfo.logistics_company || '',
+          logistics_no: shipOutInfo.logistics_no || ''
+        }
+      }))
+
+      return { code: 0, data: orders }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
@@ -165,12 +190,19 @@ module.exports = {
     try {
       const user = await verifyUserToken(token)
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
-      const [orderRes, itemsRes] = await Promise.all([
-        db.collection('cicada_orders').where({ _id: order_id, user_id: user._id }).limit(1).get(),
-        db.collection('cicada_order_items').where({ order_id }).get()
-      ])
+      const orderRes = await db.collection('cicada_orders')
+        .where({ _id: order_id, user_id: user._id })
+        .limit(1)
+        .get()
       if (!orderRes.data.length) return { code: -1, msg: '工单不存在或无权限' }
-      return { code: 0, data: { ...orderRes.data[0], items: itemsRes.data } }
+      const order = orderRes.data[0]
+      const itemKeys = [order._id, order.order_no].filter(Boolean)
+      const itemsRes = itemKeys.length
+        ? await db.collection('cicada_order_items')
+          .where({ order_id: db.command.in(itemKeys) })
+          .get()
+        : { data: [] }
+      return { code: 0, data: { ...order, items: itemsRes.data } }
     } catch (e) {
       return { code: -1, msg: e.message }
     }

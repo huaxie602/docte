@@ -12,6 +12,13 @@ const withToken = (params = {}) => ({
   token: uni.getStorageSync('token') || ''
 })
 
+const unwrapCloudResult = (result = {}) => {
+  if (result.code === 0 || result.code === undefined) {
+    return result.data === undefined ? result : result.data
+  }
+  throw new Error(result.message || result.msg || '请求失败')
+}
+
 const normalizePageParams = ({ page = 1, pageSize, size, ...rest } = {}) => ({
   ...rest,
   page,
@@ -76,19 +83,19 @@ const normalizeSubmitRepairPayload = (data = {}) => {
 }
 
 export const getRepairList = (params = {}) => {
-  return getCloudObject().getOrderList(withToken(normalizePageParams(params)))
+  return getCloudObject().getOrderList(withToken(normalizePageParams(params))).then(unwrapCloudResult)
 }
 
 export const getRepairDetail = (id) => {
-  return getCloudObject().getOrderDetail(withToken(normalizeOrderId(id)))
+  return getCloudObject().getOrderDetail(withToken(normalizeOrderId(id))).then(unwrapCloudResult)
 }
 
 export const submitRepair = (data) => {
-  return getCloudObject().createOrder(withToken(normalizeSubmitRepairPayload(data || {})))
+  return getCloudObject().createOrder(withToken(normalizeSubmitRepairPayload(data || {}))).then(unwrapCloudResult)
 }
 
 export const cancelRepair = (id, reason) => {
-  return getCloudObject().cancelOrder(withToken({ ...normalizeOrderId(id), reason }))
+  return getCloudObject().cancelOrder(withToken({ ...normalizeOrderId(id), reason })).then(unwrapCloudResult)
 }
 
 export const getRepairStats = () => {

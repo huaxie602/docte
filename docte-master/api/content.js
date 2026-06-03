@@ -26,10 +26,17 @@ const settingDoc = (title, content = '') => ({
 	content: String(content || '').replace(/\n/g, '<br/>')
 })
 
-const uploadToCloud = (filePath, dir = 'uploads') => new Promise((resolve, reject) => {
+const getFileExt = (filePath = '', fallback = 'jpg') => {
+	const cleanPath = String(filePath || '').split('?')[0]
+	const match = cleanPath.match(/\.([a-zA-Z0-9]+)$/)
+	return (match ? match[1] : fallback).toLowerCase()
+}
+
+const uploadToCloud = (filePath, dir = 'uploads', fallbackExt = 'jpg') => new Promise((resolve, reject) => {
+	const ext = getFileExt(filePath, fallbackExt)
 	uniCloud.uploadFile({
 		filePath,
-		cloudPath: `${dir}/${Date.now()}_${Math.random().toString(16).slice(2)}`,
+		cloudPath: `${dir}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`,
 		success: (res) => resolve({ url: res.fileID, fileID: res.fileID }),
 		fail: reject
 	})
@@ -58,7 +65,7 @@ const displayName = (value) => {
 	return text && !isGeneratedId(text) ? text : ''
 }
 
-export const wechatLogin = (data = {}) => getUserCloudObject().loginWithWechat(data).then(unwrapCloudResult)
+export const wechatLogin = (data = {}) => getUserCloudObject().login(data).then(unwrapCloudResult)
 
 export const devLogin = () => getUserCloudObject().devLogin({}).then(unwrapCloudResult)
 
@@ -66,9 +73,9 @@ export const logout = () => Promise.resolve()
 
 export const getUserInfo = () => Promise.resolve(uni.getStorageSync('userInfo') || {})
 
-export const uploadImage = (filePath) => uploadToCloud(filePath, 'repair/images')
+export const uploadImage = (filePath) => uploadToCloud(filePath, 'repair/images', 'jpg')
 
-export const uploadVideo = (filePath) => uploadToCloud(filePath, 'repair/videos')
+export const uploadVideo = (filePath) => uploadToCloud(filePath, 'repair/videos', 'mp4')
 
 export const getWarrantyPolicy = async () => {
 	const settings = await getPublicCloudObject().getSettings({ keys: ['warranty_policy'] }).then(unwrapCloudResult)
