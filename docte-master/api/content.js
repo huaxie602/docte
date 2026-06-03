@@ -1,5 +1,6 @@
 let publicCloudObject = null
 let userCloudObject = null
+let orderCloudObject = null
 
 const getPublicCloudObject = () => {
 	if (!publicCloudObject) publicCloudObject = uniCloud.importObject('cicada-client-public')
@@ -9,6 +10,11 @@ const getPublicCloudObject = () => {
 const getUserCloudObject = () => {
 	if (!userCloudObject) userCloudObject = uniCloud.importObject('cicada-client-user')
 	return userCloudObject
+}
+
+const getOrderCloudObject = () => {
+	if (!orderCloudObject) orderCloudObject = uniCloud.importObject('cicada-client-order')
+	return orderCloudObject
 }
 
 const unwrapCloudResult = (result = {}) => {
@@ -170,7 +176,9 @@ export const searchFault = async (data = {}) => {
 	) || null
 }
 
-export const queryPackageStatus = () => Promise.reject(new Error('包裹查询云接口暂未接入'))
+export const queryPackageStatus = (params = {}) => getOrderCloudObject()
+	.queryPackageStatus(withToken(params))
+	.then(unwrapCloudResult)
 
 export const applyInvoice = () => Promise.reject(new Error('开票申请云接口暂未接入'))
 

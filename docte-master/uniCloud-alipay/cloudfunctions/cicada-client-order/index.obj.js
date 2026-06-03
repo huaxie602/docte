@@ -31,6 +31,110 @@ function normalizePage(page, pageSize) {
   return { page: current, pageSize: size }
 }
 
+function normalizeText(value) {
+  return String(value === undefined || value === null ? '' : value).trim()
+}
+
+function normalizePhoneLast4(value) {
+  return normalizeText(value).replace(/\D/g, '').slice(-4)
+}
+
+function formatTimelineTime(value) {
+  if (!value) return ''
+  if (typeof value === 'number') {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const pad = n => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
+  return String(value)
+}
+
+function normalizeOrderTimeline(timeline = []) {
+  if (!Array.isArray(timeline)) return []
+  return timeline.map(item => ({
+    title: item.title || item.statusText || '包裹状态更新',
+    desc: item.desc || item.description || item.content || '',
+    time: formatTimelineTime(item.time || item.createTime || item.updateTime),
+    pending: Boolean(item.pending)
+  }))
+}
+
+function getShipInfo(order = {}, type = 'out') {
+  const info = type === 'back' ? (order.ship_back_info || {}) : (order.ship_out_info || {})
+  return {
+    company: info.logistics_company || info.logisticsCompany || info.returnCompany || info.return_company || '',
+    trackingNo: info.logistics_no || info.logisticsNo || info.returnNo || info.return_no || '',
+    shippedAt: info.shipped_at || info.shippedAt || order.create_time || ''
+  }
+}
+
+function getPackageStatus(order = {}) {
+  const status = order.status || 'pending'
+  if (status === 'completed') return { status: 5, statusText: '已完成', tone: 'ok', reached: 4 }
+  if (status === 'shipped') return { status: 4, statusText: '已关联工单', tone: 'ok', reached: 4 }
+  if (['inspecting', 'fixing'].includes(status)) return { status: 3, statusText: '处理中', tone: 'warn', reached: 3 }
+  if (status === 'received') return { status: 2, statusText: '已登记待检测', tone: 'warn', reached: 2 }
+  return { status: 1, statusText: '已提交待签收', tone: 'warn', reached: 1 }
+}
+
+function buildPackageTimeline(order = {}, matchedType = 'out', fullAccess = false) {
+  const shipInfo = getShipInfo(order, matchedType)
+  const rows = [
+    {
+      title: matchedType === 'back' ? '回寄发货' : '客户寄出',
+      desc: `${shipInfo.company || '物流'} ${shipInfo.trackingNo}`.trim(),
+      time: formatTimelineTime(shipInfo.shippedAt),
+      pending: false
+    }
+  ]
+
+  if (order.status && order.status !== 'pending') {
+    rows.push({
+      title: '售后已登记',
+      desc: `已关联工单 ${order.order_no || order._id || ''}`.trim(),
+      time: formatTimelineTime(order.update_time || order.create_time),
+      pending: false
+    })
+  }
+
+  if (fullAccess) {
+    rows.push(...normalizeOrderTimeline(order.timeline))
+  } else {
+    rows.push({
+      title: '隐私保护',
+      desc: '填写收件人手机号后四位后，可查看完整处理记录。',
+      time: '',
+      pending: true
+    })
+  }
+
+  return rows
+}
+
+async function findOrderByTrackingNo(trackingNo) {
+  const checks = [
+    { field: 'ship_out_info.logistics_no', type: 'out' },
+    { field: 'ship_out_info.logisticsNo', type: 'out' },
+    { field: 'ship_back_info.logistics_no', type: 'back' },
+    { field: 'ship_back_info.logisticsNo', type: 'back' },
+    { field: 'ship_back_info.return_no', type: 'back' },
+    { field: 'ship_back_info.returnNo', type: 'back' }
+  ]
+
+  for (const item of checks) {
+    const res = await db.collection('cicada_orders')
+      .where({ [item.field]: trackingNo })
+      .limit(1)
+      .get()
+    if (res.data && res.data[0]) {
+      return { order: res.data[0], matchedType: item.type }
+    }
+  }
+
+  return null
+}
+
 function genOrderNo() {
   const d = new Date()
   const pad = n => String(n).padStart(2, '0')
@@ -80,6 +184,56 @@ async function checkRateLimit(scope, identity, config) {
 
 module.exports = {
   _before() {},
+
+  async queryPackageStatus({ token = '', trackingNo = '', phoneLast4 = '' }) {
+    try {
+      const normalizedTrackingNo = normalizeText(trackingNo).replace(/\s/g, '')
+      if (!normalizedTrackingNo) return { code: -1, msg: '请输入快递单号' }
+      if (!/^[A-Za-z0-9-]{6,40}$/.test(normalizedTrackingNo)) {
+        return { code: -1, msg: '快递单号格式不正确' }
+      }
+
+      const found = await findOrderByTrackingNo(normalizedTrackingNo)
+      if (!found || !found.order) return { code: 0, data: null }
+
+      const { order, matchedType } = found
+      const shipBackInfo = order.ship_back_info || {}
+      const storedLast4 = normalizePhoneLast4(
+        shipBackInfo.phone || shipBackInfo.mobile || shipBackInfo.receiverPhone || shipBackInfo.receiver_phone
+      )
+      const inputLast4 = normalizePhoneLast4(phoneLast4)
+      let isOwner = false
+
+      if (token) {
+        try {
+          const user = await verifyUserToken(token)
+          isOwner = user && order.user_id === user._id
+        } catch (e) {
+          isOwner = false
+        }
+      }
+
+      const fullAccess = Boolean(isOwner || (storedLast4 && inputLast4 && storedLast4 === inputLast4))
+      const matchedInfo = getShipInfo(order, matchedType)
+      const statusMeta = getPackageStatus(order)
+
+      return {
+        code: 0,
+        data: {
+          trackingNo: normalizedTrackingNo,
+          company: matchedInfo.company,
+          orderId: fullAccess ? (order.order_no || order._id || '') : '',
+          status: statusMeta.status,
+          statusText: statusMeta.statusText,
+          tone: statusMeta.tone,
+          reached: statusMeta.reached,
+          timeline: buildPackageTimeline(order, matchedType, fullAccess)
+        }
+      }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
 
   async createOrder(params) {
     let orderId = ''
