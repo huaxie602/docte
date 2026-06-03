@@ -546,7 +546,7 @@
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { batchUpdateShipping, getOrderList, updateInvoiceStatus, updateOrderStatus, updateRemarks } from '../api/order.js'
 import { transformOrders } from '../utils/orderTransform.js'
 import { toEnglishStatus } from '../utils/orderStatus.js'
@@ -1237,7 +1237,22 @@ const handleImportFile = async (uploadFile) => {
   }
 }
 
-const confirmExportExcel = () => {
+const downloadWorkbook = async (workbook, filename) => {
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const confirmExportExcel = async () => {
   if (!selectedExportFields.value.length) {
     ElMessage.warning('请至少选择一个导出字段')
     return
@@ -1253,11 +1268,15 @@ const confirmExportExcel = () => {
     }, {})
   })
 
-  const worksheet = XLSX.utils.json_to_sheet(dataToExport)
-  worksheet['!cols'] = selectedFieldConfigs.map(field => ({ wch: Math.max(field.label.length * 2 + 4, 14) }))
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '工单明细')
-  XLSX.writeFile(workbook, '报修工单导出.xlsx')
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('工单明细')
+  worksheet.columns = selectedFieldConfigs.map(field => ({
+    header: field.label,
+    key: field.label,
+    width: Math.max(field.label.length * 2 + 4, 14)
+  }))
+  worksheet.addRows(dataToExport)
+  await downloadWorkbook(workbook, '报修工单导出.xlsx')
   exportDialogVisible.value = false
   ElMessage.success('导出成功')
 }

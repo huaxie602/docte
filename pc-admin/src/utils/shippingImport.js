@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 const normalizeText = (value) => String(value ?? '').trim()
 
@@ -10,16 +10,31 @@ const pickCell = (row, keys) => {
   return ''
 }
 
-export const downloadShippingTemplate = () => {
+const downloadWorkbook = async (workbook, filename) => {
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+export const downloadShippingTemplate = async () => {
   const rows = [
     ['工单编号', '物流公司', '运单号'],
     ['DR2026... (请填写真实编号)', '顺丰速运 (必填)', 'SF123456... (必填)']
   ]
-  const worksheet = XLSX.utils.aoa_to_sheet(rows)
-  worksheet['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 24 }]
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, '批量回寄发货模板')
-  XLSX.writeFile(workbook, '批量回寄发货模板.xlsx')
+  const workbook = new ExcelJS.Workbook()
+  const worksheet = workbook.addWorksheet('批量回寄发货模板')
+  worksheet.addRows(rows)
+  worksheet.columns = [{ width: 28 }, { width: 18 }, { width: 24 }]
+  await downloadWorkbook(workbook, '批量回寄发货模板.xlsx')
 }
 
 export const normalizeShippingRows = (rows = []) => {
@@ -32,10 +47,27 @@ export const normalizeShippingRows = (rows = []) => {
     .filter(item => item.orderNo || item.returnCompany || item.returnNo)
 }
 
-export const parseShippingExcelBuffer = (buffer) => {
-  const workbook = XLSX.read(buffer, { type: 'array' })
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+export const parseShippingExcelBuffer = async (buffer) => {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const worksheet = workbook.worksheets[0]
+  if (!worksheet) return []
+
+  const headers = []
+  worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    headers[colNumber] = normalizeText(cell.value)
+  })
+
+  const rows = []
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+    const rowData = {}
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const key = headers[colNumber]
+      if (key) rowData[key] = cell.value
+    })
+    rows.push(rowData)
+  })
   return normalizeShippingRows(rows)
 }
 
