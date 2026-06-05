@@ -5,19 +5,19 @@
       <div class="header-stats">
         <div class="stat-item stat-pending">
           <span class="stat-label">待处理</span>
-          <span class="stat-value">{{ orders.filter(o => o.status === '待处理').length }}</span>
+          <span class="stat-value">{{ orders.filter(o => pendingAdminStatuses.includes(o.status)).length }}</span>
         </div>
         <div class="stat-item stat-processing">
-          <span class="stat-label">维修中</span>
-          <span class="stat-value">{{ orders.filter(o => o.status === '维修中').length }}</span>
+          <span class="stat-label">处理中</span>
+          <span class="stat-value">{{ orders.filter(o => o.status === '处理中').length }}</span>
         </div>
         <div class="stat-item stat-shipped">
-          <span class="stat-label">已发货</span>
-          <span class="stat-value">{{ orders.filter(o => o.status === '已发货').length }}</span>
+          <span class="stat-label">已回寄</span>
+          <span class="stat-value">{{ orders.filter(o => o.status === '已回寄').length }}</span>
         </div>
         <div class="stat-item stat-completed">
-          <span class="stat-label">已处理</span>
-          <span class="stat-value">{{ orders.filter(o => o.status === '已处理').length }}</span>
+          <span class="stat-label">已完成</span>
+          <span class="stat-value">{{ orders.filter(o => o.status === '已完成').length }}</span>
         </div>
       </div>
     </div>
@@ -26,10 +26,7 @@
       <div class="filter-container">
         <el-input v-model="wo.search" placeholder="搜索姓名/手机号/设备号" style="width: 240px;" clearable prefix-icon="Search"></el-input>
         <el-select v-model="wo.filter" placeholder="工单状态" clearable style="width: 130px;">
-          <el-option label="待处理" value="待处理"></el-option>
-          <el-option label="维修中" value="维修中"></el-option>
-          <el-option label="已发货" value="已发货"></el-option>
-          <el-option label="已处理" value="已处理"></el-option>
+          <el-option v-for="status in adminStatusOptions" :key="status" :label="status" :value="status"></el-option>
         </el-select>
         <el-select v-model="wo.deviceFilter" placeholder="设备型号" clearable style="width: 180px;">
           <el-option v-for="device in deviceModels" :key="device" :label="device" :value="device"></el-option>
@@ -49,9 +46,13 @@
           placeholder="发货日期"
           style="width: 140px;"
         ></el-date-picker>
-        <el-button plain class="top-btn-text" @click="downloadImportTemplate"><el-icon><Document /></el-icon> 下载模板</el-button>
-        <el-button type="success" plain class="top-btn-text" :loading="importing" @click="importDialogVisible = true">
-          <el-icon><Upload /></el-icon> 导入运单
+        <el-button plain class="top-btn-text" @click="downloadImportTemplate('inbound')"><el-icon><Document /></el-icon> 签收模板</el-button>
+        <el-button plain class="top-btn-text" @click="downloadImportTemplate('return')"><el-icon><Document /></el-icon> 回寄模板</el-button>
+        <el-button type="success" plain class="top-btn-text" :loading="importing" @click="openImportDialog('inbound')">
+          <el-icon><Upload /></el-icon> 导入签收单
+        </el-button>
+        <el-button type="primary" plain class="top-btn-text" :loading="importing" @click="openImportDialog('return')">
+          <el-icon><Upload /></el-icon> 导入回寄单
         </el-button>
         <el-button plain class="top-btn-text" :disabled="!selectedOrders.length" @click="handleBatchPrint"><el-icon><Printer /></el-icon> 批量打印</el-button>
         <el-dropdown trigger="click" :disabled="!selectedOrders.length || batchCompleting" @command="handleBatchStatusCommand">
@@ -60,7 +61,7 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="processing">标记维修中</el-dropdown-item>
+              <el-dropdown-item command="processing">标记处理中</el-dropdown-item>
               <el-dropdown-item command="completed" divided>批量结单</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -74,8 +75,8 @@
         <el-icon :size="20"><InfoFilled /></el-icon>
       </div>
       <div class="banner-content">
-        <div class="banner-title">批量回寄发货</div>
-        <div class="banner-desc">选择发货日期，下载模板填入工单编号、物流公司和回寄运单号，上传后系统会自动更新工单状态与物流信息</div>
+        <div class="banner-title">批量导入物流状态</div>
+        <div class="banner-desc">签收单用于客户寄入，导入后更新为已签收；回寄单用于后台发货，导入后更新为已回寄。</div>
       </div>
       <div class="banner-badge">
         <el-tag v-if="selectedOrders.length" type="primary" effect="dark" round>已选择 {{ selectedOrders.length }} 单</el-tag>
@@ -129,10 +130,7 @@
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="待处理">待处理</el-dropdown-item>
-                  <el-dropdown-item command="维修中">维修中</el-dropdown-item>
-                  <el-dropdown-item command="已发货">已发货</el-dropdown-item>
-                  <el-dropdown-item command="已处理">已处理</el-dropdown-item>
+                  <el-dropdown-item v-for="status in adminActionStatusOptions" :key="status" :command="status">{{ status }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -184,7 +182,7 @@
       <div class="drawer-body">
         <div class="drawer-order-head">
           <span style="font-size:16px; font-weight:600; color:#1d2129;">{{currentOrder.id}}</span>
-          <el-tag :type="currentOrder.status==='已发货'?'success':currentOrder.status==='维修中'?'primary':'warning'">{{currentOrder.status}}</el-tag>
+          <el-tag :class="'status-tag status-' + currentOrder.status" :type="getStatusType(currentOrder.status)" effect="light">{{currentOrder.status}}</el-tag>
         </div>
         <el-tabs class="drawer-tabs">
           <el-tab-pane label="基础与物流">
@@ -260,7 +258,7 @@
               <p>工单编号：{{currentOrder.id}}</p>
               <p>提交时间：{{currentOrder.submitTime || '-'}}</p>
               <p>更新时间：{{currentOrder.updateTime || '-'}}</p>
-              <p>当前状态：<el-tag :type="currentOrder.status==='已发货'?'success':currentOrder.status==='维修中'?'primary':'warning'" size="small">{{currentOrder.status}}</el-tag></p>
+              <p>当前状态：<el-tag :class="'status-tag status-' + currentOrder.status" :type="getStatusType(currentOrder.status)" effect="light" size="small">{{currentOrder.status}}</el-tag></p>
             </div>
             <div class="drawer-section">
               <p class="drawer-section-title">备注与留言</p>
@@ -318,6 +316,91 @@
             </div>
           </el-tab-pane>
           <el-tab-pane label="财务与发票">
+            <div class="drawer-section quote-editor-section">
+              <div class="drawer-section-head">
+                <p class="drawer-section-title">维修报价</p>
+                <el-tag :type="getQuoteStatusType(quoteForm.status)" size="small">{{ getQuoteStatusText(quoteForm.status) }}</el-tag>
+              </div>
+              <div class="quote-summary-bar">
+                <div><span>配件费</span><strong>{{ formatMoney(quotePartsFee) }}</strong></div>
+                <div><span>工时费</span><strong>{{ formatMoney(quoteLaborFee) }}</strong></div>
+                <div><span>合计</span><strong class="quote-total">{{ formatMoney(quoteTotal) }}</strong></div>
+              </div>
+              <div class="quote-item-list">
+                <div v-for="(item, index) in quoteForm.items" :key="item.localId" class="quote-item-editor">
+                  <el-input v-model="item.name" placeholder="维修项目，如更换轴承/检测清洁"></el-input>
+                  <el-input v-model="item.desc" placeholder="项目说明，可选"></el-input>
+                  <div class="quote-fee-row">
+                    <el-input-number v-model="item.partsFee" :min="0" :precision="2" :step="10" controls-position="right" placeholder="配件费"></el-input-number>
+                    <el-input-number v-model="item.laborFee" :min="0" :precision="2" :step="10" controls-position="right" placeholder="工时费"></el-input-number>
+                    <el-button type="danger" link :disabled="quoteForm.items.length <= 1" @click="removeQuoteItem(index)">删除</el-button>
+                  </div>
+                </div>
+              </div>
+              <el-button type="primary" plain size="small" @click="addQuoteItem">添加费用项</el-button>
+              <el-input
+                v-model="quoteForm.remark"
+                type="textarea"
+                :rows="2"
+                placeholder="报价备注（客户可见，可填写付款说明或费用说明）"
+              ></el-input>
+              <div class="quote-actions">
+                <el-button :loading="quoteSaving" @click="saveOrderQuote('draft')">保存草稿</el-button>
+                <el-button type="primary" :loading="quoteSaving" @click="saveOrderQuote('issued')">发布报价</el-button>
+              </div>
+              <p class="quote-tip">发布后，客户小程序的“费用与发票”会展示该金额，并允许客户确认费用、上传付款凭证。</p>
+            </div>
+            <div class="drawer-section payment-section">
+              <div class="drawer-section-head">
+                <p class="drawer-section-title">付款核销</p>
+                <el-tag :type="getPaymentStatusType(currentOrder)" size="small">{{ getPaymentStatusText(currentOrder) }}</el-tag>
+              </div>
+              <div class="payment-status-grid">
+                <div>
+                  <span>客户确认</span>
+                  <strong>{{ getAuthorizationStatusText(currentOrder.authorizationStatus) }}</strong>
+                </div>
+                <div>
+                  <span>应收金额</span>
+                  <strong>{{ formatMoney(currentOrder.totalPrice) }}</strong>
+                </div>
+                <div>
+                  <span>付款状态</span>
+                  <strong>{{ getPaymentStatusText(currentOrder) }}</strong>
+                </div>
+              </div>
+              <div v-if="currentOrder.paymentProofs && currentOrder.paymentProofs.length" class="payment-proof-list">
+                <div v-for="(proof, index) in currentOrder.paymentProofs" :key="proof.id || proof.url || proof.fileID || index" class="payment-proof-card">
+                  <el-image
+                    v-if="isPreviewableProof(proof)"
+                    :src="getProofUrl(proof)"
+                    :preview-src-list="getPaymentPreviewList(currentOrder.paymentProofs)"
+                    class="payment-proof-thumb"
+                    fit="cover"
+                  ></el-image>
+                  <div v-else class="payment-proof-placeholder">凭证</div>
+                  <div class="payment-proof-info">
+                    <strong>付款凭证 {{ index + 1 }}</strong>
+                    <span>{{ formatProofTime(proof.time || proof.create_time) || '客户已上传' }}</span>
+                    <a v-if="getProofUrl(proof)" :href="getProofUrl(proof)" target="_blank" rel="noreferrer">查看原文件</a>
+                    <span v-else class="empty-text">暂无可访问链接</span>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="empty-text">客户还未上传付款凭证。</p>
+              <div class="payment-actions">
+                <el-button
+                  v-if="resolvePaymentStatus(currentOrder) === 'uploaded'"
+                  type="success"
+                  size="small"
+                  :loading="paymentSaving"
+                  @click="markPaymentPaid"
+                >
+                  标记已到账
+                </el-button>
+                <span v-if="resolvePaymentStatus(currentOrder) === 'paid'" class="payment-paid-tip">财务已确认到账，可继续处理发票。</span>
+              </div>
+            </div>
             <div class="drawer-section">
               <p class="drawer-section-title">财务/发票信息</p>
               <p>是否需要开票：{{currentOrder.needInvoice ? '是' : '否'}}</p>
@@ -357,10 +440,7 @@
         <div class="drawer-status-box">
           <span class="drawer-status-title">更改工单进度</span>
           <el-radio-group v-model="newStatus">
-            <el-radio label="待处理">待处理</el-radio>
-            <el-radio label="维修中">维修中</el-radio>
-            <el-radio label="已发货">已发货</el-radio>
-            <el-radio label="已处理">已处理</el-radio>
+            <el-radio v-for="status in adminActionStatusOptions" :key="status" :label="status">{{ status }}</el-radio>
           </el-radio-group>
         </div>
         <div class="drawer-footer-actions">
@@ -412,16 +492,16 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="importDialogVisible" title="批量导入回寄运单" width="480px" align-center>
+  <el-dialog v-model="importDialogVisible" :title="`批量导入${activeLogisticsImportLabel}`" width="480px" align-center>
     <div class="import-workbench">
       <el-alert
-        title="温馨提示：请务必下载并严格按照系统提供的规范模板填写数据，避免因格式错误导致发货失败！"
+        :title="logisticsImportTip"
         type="warning"
         show-icon
         :closable="false"
       ></el-alert>
       <div class="import-workbench-actions">
-        <el-button plain @click="downloadImportTemplate"><el-icon><Document /></el-icon> 下载规范模板</el-button>
+        <el-button plain @click="downloadImportTemplate(activeLogisticsImportType)"><el-icon><Document /></el-icon> 下载规范模板</el-button>
         <el-upload
           action="#"
           :auto-upload="false"
@@ -435,7 +515,15 @@
     </div>
   </el-dialog>
 
-  <el-dialog v-model="importResultVisible" title="批量回寄发货结果" width="720px" align-center>
+  <el-dialog v-model="importResultVisible" :title="`${importResult?.typeLabel || activeLogisticsImportLabel}结果`" width="720px" align-center>
+    <el-alert
+      v-if="importResult"
+      :title="`本次导入类型：${importResult.typeLabel || activeLogisticsImportLabel}，目标状态：${importResult.targetStatus || '-'}`"
+      type="info"
+      show-icon
+      :closable="false"
+      class="import-result-tip"
+    ></el-alert>
     <div v-if="importResult" class="import-summary">
       <div class="import-stat-card total">
         <span>总计</span>
@@ -547,20 +635,26 @@ import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ExcelJS from 'exceljs'
-import { batchUpdateShipping, getOrderList, updateInvoiceStatus, updateOrderStatus, updateRemarks } from '../api/order.js'
+import { batchImportLogistics, batchUpdateShipping, getOrderList, updateInvoiceStatus, updateOrderQuote, updateOrderStatus, updatePaymentStatus, updateRemarks } from '../api/order.js'
 import { transformOrders } from '../utils/orderTransform.js'
 import { toEnglishStatus } from '../utils/orderStatus.js'
-import { downloadShippingTemplate, parseShippingExcelFile } from '../utils/shippingImport.js'
+import { downloadShippingTemplate, getLogisticsImportTypeLabel, parseShippingExcelFile } from '../utils/shippingImport.js'
 
 const route = useRoute()
 const isMobile = ref(window.innerWidth <= 768)
+const pendingAdminStatuses = ['已提交', '运输中', '已签收']
+const adminStatusOptions = ['已提交', '运输中', '已签收', '处理中', '已回寄', '已完成', '已取消']
+const adminActionStatusOptions = ['已签收', '处理中', '已回寄', '已完成', '已取消']
 
 const getStatusType = (status) => {
   const statusMap = {
-    '待处理': 'warning',
-    '维修中': 'primary',
-    '已发货': 'success',
-    '已处理': 'info'
+    '已提交': 'info',
+    '运输中': 'warning',
+    '已签收': 'warning',
+    '处理中': 'primary',
+    '已回寄': 'success',
+    '已完成': 'success',
+    '已取消': 'danger'
   }
   return statusMap[status] || 'info'
 }
@@ -578,6 +672,87 @@ const normalizeInvoiceStatus = (order = {}) => {
   if (order.invoiceStatus === '已发票') return '已发票'
   if (order.invoiceStatus === '未发票') return '未发票'
   return '无需开票'
+}
+
+const formatMoney = (value = 0) => {
+  const amount = Number(value) || 0
+  return `¥${amount.toFixed(2)}`
+}
+
+const getQuoteStatusText = (status = 'pending') => {
+  const statusMap = {
+    pending: '待报价',
+    draft: '草稿',
+    issued: '已发布',
+    confirmed: '客户已确认',
+    rejected: '已拒绝'
+  }
+  return statusMap[status] || '待报价'
+}
+
+const getQuoteStatusType = (status = 'pending') => {
+  const statusMap = {
+    pending: 'info',
+    draft: 'info',
+    issued: 'warning',
+    confirmed: 'success',
+    rejected: 'danger'
+  }
+  return statusMap[status] || 'info'
+}
+
+const resolvePaymentStatus = (order = {}) => {
+  if (order.paymentStatus) return order.paymentStatus
+  return Array.isArray(order.paymentProofs) && order.paymentProofs.length ? 'uploaded' : 'pending'
+}
+
+const getPaymentStatusText = (order = {}) => {
+  const statusMap = {
+    pending: '待付款',
+    uploaded: '待核销',
+    paid: '已到账'
+  }
+  if (!Number(order.totalPrice || 0)) return '待报价'
+  return statusMap[resolvePaymentStatus(order)] || '待付款'
+}
+
+const getPaymentStatusType = (order = {}) => {
+  const status = resolvePaymentStatus(order)
+  if (!Number(order.totalPrice || 0)) return 'info'
+  if (status === 'paid') return 'success'
+  if (status === 'uploaded') return 'warning'
+  return 'info'
+}
+
+const getAuthorizationStatusText = (status = '') => {
+  if (status === 'confirmed') return '已确认'
+  if (status === 'rejected') return '已拒绝'
+  return '待确认'
+}
+
+const formatProofTime = (value = '') => {
+  if (!value) return ''
+  if (typeof value === 'number') {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return date.toLocaleString('zh-CN', { hour12: false })
+  }
+  return String(value)
+}
+
+const getProofUrl = (proof = {}) => proof.previewUrl || proof.url || proof.fileUrl || proof.fileID || proof.fileId || proof.path || ''
+
+const isPreviewableUrl = (url = '') => {
+  const normalized = String(url || '').split('?')[0].toLowerCase()
+  return /^(https?:|data:image|blob:)/.test(normalized) && /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(normalized)
+}
+
+const isPreviewableProof = (proof = {}) => isPreviewableUrl(getProofUrl(proof))
+
+const getPaymentPreviewList = (proofs = []) => {
+  return (Array.isArray(proofs) ? proofs : [])
+    .map(getProofUrl)
+    .filter(isPreviewableUrl)
 }
 
 const loading = ref(false)
@@ -609,6 +784,8 @@ const exportableFields = [
   { label: '企业税号', key: 'taxId', getter: order => order.taxId || '-' },
   { label: '发票状态', key: 'invoiceStatus', getter: order => normalizeInvoiceStatus(order) },
   { label: '发票备注', key: 'invoiceRemark', getter: order => order.invoiceRemark },
+  { label: '报价状态', key: 'quoteStatus', getter: order => getQuoteStatusText(order.quoteStatus) },
+  { label: '付款状态', key: 'paymentStatus', getter: order => getPaymentStatusText(order) },
   { label: '总金额', key: 'totalPrice', getter: order => order.totalPrice }
 ]
 
@@ -623,8 +800,15 @@ const isIndeterminate = ref(false)
 const importDialogVisible = ref(false)
 const importResultVisible = ref(false)
 const importResult = ref(null)
+const activeLogisticsImportType = ref('return')
 const shipDate = ref(new Date().toISOString().slice(0, 10))
 const searchInvoiceStatus = ref('')
+const activeLogisticsImportLabel = computed(() => getLogisticsImportTypeLabel(activeLogisticsImportType.value))
+const logisticsImportTip = computed(() => {
+  return activeLogisticsImportType.value === 'inbound'
+    ? '签收单用于客户寄入设备：请填写工单编号、物流公司、物流单号、签收时间，导入后状态更新为已签收。'
+    : '回寄单用于后台发货：请填写工单编号、物流公司、物流单号、发货时间，导入后状态更新为已回寄。'
+})
 
 const loadOrders = async () => {
   loading.value = true
@@ -683,8 +867,78 @@ const newStatus = ref('')
 const invoiceStatus = ref('无需开票')
 const invoiceForm = reactive({ title: '', taxNo: '', remark: '' })
 const remarkSaving = ref(false)
+const quoteSaving = ref(false)
+const paymentSaving = ref(false)
 const quickShipForm = reactive({ returnCompany: '顺丰速运', returnNo: '' })
 const quickRemarkForm = reactive({ adminRemark: '', printRemark: '' })
+
+const createQuoteItem = (item = {}) => ({
+  localId: item.localId || `quote-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  name: item.name || item.title || item.projectName || '',
+  desc: item.desc || item.description || item.remark || '',
+  partsFee: Number(item.partsFee ?? item.parts_fee ?? item.partFee ?? item.part_fee ?? item.materialFee ?? item.material_fee ?? 0) || 0,
+  laborFee: Number(item.laborFee ?? item.labor_fee ?? item.workFee ?? item.work_fee ?? item.serviceFee ?? item.service_fee ?? 0) || 0
+})
+
+const quoteForm = reactive({
+  status: 'pending',
+  remark: '',
+  items: [createQuoteItem()]
+})
+
+const quotePartsFee = computed(() => quoteForm.items.reduce((total, item) => total + (Number(item.partsFee) || 0), 0))
+const quoteLaborFee = computed(() => quoteForm.items.reduce((total, item) => total + (Number(item.laborFee) || 0), 0))
+const quoteTotal = computed(() => quotePartsFee.value + quoteLaborFee.value)
+
+const normalizeQuoteItems = (items = []) => {
+  return (Array.isArray(items) ? items : []).map(createQuoteItem)
+}
+
+const resetQuoteForm = (order = {}) => {
+  const rawItems = Array.isArray(order.quoteItems) && order.quoteItems.length
+    ? order.quoteItems
+    : (Array.isArray(order.quote_items) ? order.quote_items : [])
+  const totalPrice = Number(order.totalPrice ?? order.total_price ?? 0) || 0
+  const partsFee = Number(order.partsFee ?? order.parts_fee ?? 0) || 0
+  const laborFee = Number(order.laborFee ?? order.labor_fee ?? 0) || 0
+  const fallbackItems = totalPrice > 0
+    ? [createQuoteItem({
+        name: '维修费用',
+        desc: order.quoteRemark || order.quote_remark || '',
+        partsFee,
+        laborFee: laborFee || Math.max(totalPrice - partsFee, 0)
+      })]
+    : [createQuoteItem()]
+
+  quoteForm.status = order.quoteStatus || order.quote_status || (totalPrice > 0 ? 'issued' : 'pending')
+  quoteForm.remark = order.quoteRemark || order.quote_remark || ''
+  quoteForm.items = rawItems.length ? normalizeQuoteItems(rawItems) : fallbackItems
+}
+
+const buildQuotePayload = (status) => {
+  const items = quoteForm.items
+    .map(item => {
+      const name = (item.name || '').trim()
+      const desc = (item.desc || '').trim()
+      const partsFee = Number(item.partsFee) || 0
+      const laborFee = Number(item.laborFee) || 0
+      return {
+        name: name || '维修费用',
+        desc,
+        partsFee,
+        laborFee,
+        hasContent: Boolean(name || desc || partsFee > 0 || laborFee > 0)
+      }
+    })
+    .filter(item => item.hasContent)
+    .map(({ hasContent, ...item }) => item)
+
+  return {
+    status,
+    remark: (quoteForm.remark || '').trim(),
+    items
+  }
+}
 
 const handleSelectionChange = (selection) => {
   selectedOrders.value = selection
@@ -717,7 +971,17 @@ const openDrawer = (row) => {
   invoiceForm.title = row.invoiceTitle || ''
   invoiceForm.taxNo = row.taxId || ''
   invoiceForm.remark = row.invoiceRemark || ''
+  resetQuoteForm(row)
   drawerVisible.value = true
+}
+
+const addQuoteItem = () => {
+  quoteForm.items.push(createQuoteItem())
+}
+
+const removeQuoteItem = (index) => {
+  if (quoteForm.items.length <= 1) return
+  quoteForm.items.splice(index, 1)
 }
 
 const resetQuickShipDialog = () => {
@@ -759,6 +1023,11 @@ const syncCurrentOrderFromList = (row) => {
   if (fresh) {
     currentOrder.value = fresh
     newStatus.value = fresh.status
+    invoiceStatus.value = normalizeInvoiceStatus(fresh)
+    invoiceForm.title = fresh.invoiceTitle || ''
+    invoiceForm.taxNo = fresh.taxId || ''
+    invoiceForm.remark = fresh.invoiceRemark || ''
+    resetQuoteForm(fresh)
   }
 }
 
@@ -776,7 +1045,7 @@ const handleQuickStatusChange = async (row, status) => {
     return false
   }
 
-  if (status === '已发货') {
+  if (status === '已回寄') {
     currentQuickOrder.value = row
     quickShipForm.returnCompany = row.returnCompany || '顺丰速运'
     quickShipForm.returnNo = row.returnNo || ''
@@ -785,8 +1054,8 @@ const handleQuickStatusChange = async (row, status) => {
   }
 
   try {
-    if (status === '已处理') {
-      if (row.status !== '已发货' || !row.returnNo) {
+    if (status === '已完成') {
+      if (row.status !== '已回寄' || !row.returnNo) {
         ElMessage.error('禁止越级结单！该工单尚未录入回寄物流信息。')
         return false
       }
@@ -803,7 +1072,7 @@ const handleQuickStatusChange = async (row, status) => {
         )
       } else {
         await ElMessageBox.confirm(
-          '确定将该工单标记为【已处理】吗？',
+          '确定将该工单标记为【已完成】吗？',
           '结单确认',
           {
             confirmButtonText: '确定',
@@ -856,11 +1125,11 @@ const handleBatchProcessing = async () => {
     return
   }
 
-  const invalidOrders = selectedOrders.value.filter(order => ['已发货', '已处理'].includes(order.status))
+  const invalidOrders = selectedOrders.value.filter(order => ['已回寄', '已完成'].includes(order.status))
   if (invalidOrders.length) {
     await ElMessageBox.alert(
-      `以下工单已进入发货或结单阶段，不能批量回退为维修中：${formatOrderIdList(invalidOrders)}`,
-      '批量标记维修中失败',
+      `以下工单已进入回寄或完成阶段，不能批量回退为处理中：${formatOrderIdList(invalidOrders)}`,
+      '批量标记处理中失败',
       {
         confirmButtonText: '知道了',
         type: 'warning'
@@ -869,15 +1138,15 @@ const handleBatchProcessing = async () => {
     return
   }
 
-  const targetOrders = selectedOrders.value.filter(order => order.status !== '维修中')
+  const targetOrders = selectedOrders.value.filter(order => order.status !== '处理中')
   if (!targetOrders.length) {
-    ElMessage.info('选中的工单已全部是维修中')
+    ElMessage.info('选中的工单已全部是处理中')
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定将选中的 ${targetOrders.length} 个工单批量标记为【维修中】吗？涉及工单：${formatOrderIdList(targetOrders)}`,
+      `确定将选中的 ${targetOrders.length} 个工单批量标记为【处理中】吗？涉及工单：${formatOrderIdList(targetOrders)}`,
       '批量状态变更确认',
       {
         confirmButtonText: '确定',
@@ -888,21 +1157,21 @@ const handleBatchProcessing = async () => {
 
     batchCompleting.value = true
     const token = localStorage.getItem('adminToken')
-    const statusEn = toEnglishStatus('维修中')
+    const statusEn = toEnglishStatus('处理中')
     const results = await Promise.allSettled(
       targetOrders.map(order => updateOrderStatus(token, order._id, statusEn))
     )
     const failed = results.filter(item => item.status === 'rejected')
     if (failed.length) {
-      ElMessage.error(`批量标记维修中完成，失败 ${failed.length} 单`)
+      ElMessage.error(`批量标记处理中完成，失败 ${failed.length} 单`)
     } else {
-      ElMessage.success(`已批量标记维修中 ${targetOrders.length} 单`)
+      ElMessage.success(`已批量标记处理中 ${targetOrders.length} 单`)
     }
     selectedOrders.value = []
     await loadOrders()
   } catch (error) {
     if (!isUserCancel(error)) {
-      ElMessage.error(error.message || '批量标记维修中失败')
+      ElMessage.error(error.message || '批量标记处理中失败')
     }
   } finally {
     batchCompleting.value = false
@@ -915,7 +1184,7 @@ const handleBatchComplete = async () => {
     return
   }
 
-  const invalidShippingOrders = selectedOrders.value.filter(order => order.status !== '已发货' || !order.returnNo)
+  const invalidShippingOrders = selectedOrders.value.filter(order => order.status !== '已回寄' || !order.returnNo)
   if (invalidShippingOrders.length) {
     await ElMessageBox.alert(
       `以下工单尚未完成回寄发货，不能批量结单：${formatOrderIdList(invalidShippingOrders)}`,
@@ -931,8 +1200,8 @@ const handleBatchComplete = async () => {
   const pendingInvoiceOrders = selectedOrders.value.filter(order => order.needInvoice === true && normalizeInvoiceStatus(order) !== '已发票')
   const orderListText = formatOrderIdList(selectedOrders.value)
   const confirmMessage = pendingInvoiceOrders.length
-    ? `本次将批量标记 ${selectedOrders.value.length} 个工单为【已处理】。涉及工单：${orderListText}。其中 ${pendingInvoiceOrders.length} 个工单需要发票但尚未标记为已发票，确定强制结单吗？`
-    : `确定将选中的 ${selectedOrders.value.length} 个工单批量标记为【已处理】吗？涉及工单：${orderListText}`
+    ? `本次将批量标记 ${selectedOrders.value.length} 个工单为【已完成】。涉及工单：${orderListText}。其中 ${pendingInvoiceOrders.length} 个工单需要发票但尚未标记为已发票，确定强制结单吗？`
+    : `确定将选中的 ${selectedOrders.value.length} 个工单批量标记为【已完成】吗？涉及工单：${orderListText}`
 
   try {
     await ElMessageBox.confirm(
@@ -947,7 +1216,7 @@ const handleBatchComplete = async () => {
 
     batchCompleting.value = true
     const token = localStorage.getItem('adminToken')
-    const statusEn = toEnglishStatus('已处理')
+    const statusEn = toEnglishStatus('已完成')
     const results = await Promise.allSettled(
       selectedOrders.value.map(order => updateOrderStatus(token, order._id, statusEn))
     )
@@ -1032,6 +1301,102 @@ const saveInvoiceStatus = async () => {
     ElMessage.error(error.message || '发票状态保存失败')
   } finally {
     loading.value = false
+  }
+}
+
+const saveOrderQuote = async (status = 'draft') => {
+  if (!currentOrder.value) return
+  const payload = buildQuotePayload(status)
+  const total = payload.items.reduce((sum, item) => sum + (Number(item.partsFee) || 0) + (Number(item.laborFee) || 0), 0)
+
+  if (!payload.items.length || total <= 0) {
+    ElMessage.warning('请至少填写一个有效报价项目和金额')
+    return
+  }
+
+  if (status === 'issued') {
+    try {
+      await ElMessageBox.confirm(
+        `确定发布报价 ${formatMoney(total)} 给客户确认吗？`,
+        '发布报价确认',
+        {
+          confirmButtonText: '发布报价',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    } catch (error) {
+      if (!isUserCancel(error)) {
+        ElMessage.error(error.message || '发布报价取消')
+      }
+      return
+    }
+  }
+
+  quoteSaving.value = true
+  try {
+    const token = localStorage.getItem('adminToken')
+    const result = await updateOrderQuote(token, currentOrder.value._id, payload)
+    ElMessage.success(status === 'issued' ? '报价已发布' : '报价草稿已保存')
+    await loadOrders()
+    const fresh = orders.value.find(item => item._id === currentOrder.value._id)
+    if (fresh) {
+      currentOrder.value = fresh
+      resetQuoteForm(fresh)
+    } else if (result) {
+      resetQuoteForm({ ...currentOrder.value, ...result })
+    }
+  } catch (error) {
+    ElMessage.error(error.message || '报价保存失败')
+  } finally {
+    quoteSaving.value = false
+  }
+}
+
+const markPaymentPaid = async () => {
+  if (!currentOrder.value) return
+  if (resolvePaymentStatus(currentOrder.value) !== 'uploaded') {
+    ElMessage.info('当前没有待核销的付款凭证')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确认客户付款已经到账，并将付款状态标记为“已到账”？',
+      '付款核销确认',
+      {
+        confirmButtonText: '确认到账',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch (error) {
+    if (!isUserCancel(error)) {
+      ElMessage.error(error.message || '付款核销取消')
+    }
+    return
+  }
+
+  paymentSaving.value = true
+  try {
+    const token = localStorage.getItem('adminToken')
+    const orderId = currentOrder.value._id
+    const result = await updatePaymentStatus(token, orderId, 'paid')
+    ElMessage.success('付款已标记为到账')
+    await loadOrders()
+    const fresh = orders.value.find(item => item._id === orderId)
+    if (fresh) {
+      currentOrder.value = fresh
+    } else if (result) {
+      currentOrder.value = {
+        ...currentOrder.value,
+        paymentStatus: result.paymentStatus || result.payment_status || 'paid'
+      }
+    }
+  } catch (error) {
+    ElMessage.error(error.message || '付款核销失败')
+  } finally {
+    paymentSaving.value = false
   }
 }
 
@@ -1207,8 +1572,14 @@ const handleBatchPrint = async () => {
   setTimeout(resetPrinting, 1000)
 }
 
-const downloadImportTemplate = () => {
-  downloadShippingTemplate()
+const openImportDialog = (type = 'return') => {
+  activeLogisticsImportType.value = type
+  importResult.value = null
+  importDialogVisible.value = true
+}
+
+const downloadImportTemplate = (type = 'return') => {
+  downloadShippingTemplate(type)
 }
 
 const handleImportFile = async (uploadFile) => {
@@ -1217,14 +1588,15 @@ const handleImportFile = async (uploadFile) => {
 
   importing.value = true
   try {
-    const shippingList = await parseShippingExcelFile(file)
-    if (!shippingList.length) {
+    const importType = activeLogisticsImportType.value
+    const rows = await parseShippingExcelFile(file, importType)
+    if (!rows.length) {
       ElMessage.warning('Excel 中没有可导入的数据')
       return
     }
 
     const token = localStorage.getItem('adminToken')
-    const result = await batchUpdateShipping(token, shippingList)
+    const result = await batchImportLogistics(token, importType, rows, shipDate.value)
     importResult.value = result
     importDialogVisible.value = false
     importResultVisible.value = true
@@ -1314,6 +1686,7 @@ const confirmExportExcel = async () => {
 .import-workbench { display: flex; flex-direction: column; gap: 22px; }
 .import-workbench-actions { display: flex; justify-content: center; align-items: center; gap: 14px; }
 .import-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+.import-result-tip { margin-bottom: 14px; }
 .import-stat-card { border-radius: 12px; padding: 16px; background: #f7f8fa; text-align: center; }
 .import-stat-card span { display: block; color: #86909c; font-size: 13px; margin-bottom: 6px; }
 .import-stat-card strong { display: block; font-size: 30px; line-height: 1; color: #1d2129; }
@@ -1359,6 +1732,8 @@ const confirmExportExcel = async () => {
 .drawer-section { background: #f7f8fa; padding: 16px; border-radius: 10px; margin-bottom: 16px; }
 .drawer-section p { margin: 0; }
 .drawer-section-title { font-weight: 600; color: #1d2129; margin: 0 0 8px !important; }
+.drawer-section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.drawer-section-head .drawer-section-title { margin-bottom: 0 !important; }
 .customer-section { background: #eef6ff; }
 .drawer-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 .drawer-info-item { min-width: 0; padding: 10px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.72); }
@@ -1366,6 +1741,29 @@ const confirmExportExcel = async () => {
 .drawer-info-item span { display: block; margin-bottom: 4px; color: #86909c; font-size: 12px; line-height: 1.3; }
 .drawer-info-item strong { display: block; color: #1d2129; font-size: 14px; font-weight: 600; line-height: 1.5; word-break: break-all; }
 .mono-text { font-family: 'Consolas', 'Menlo', monospace; }
+.quote-editor-section, .payment-section { background: #fff; border: 1px solid #e5eefb; box-shadow: 0 8px 24px rgba(24, 144, 255, 0.06); }
+.quote-summary-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.quote-summary-bar div, .payment-status-grid div { padding: 10px 12px; border-radius: 8px; background: #f7fbff; border: 1px solid #e6f4ff; }
+.quote-summary-bar span, .payment-status-grid span { display: block; color: #86909c; font-size: 12px; line-height: 1.3; margin-bottom: 4px; }
+.quote-summary-bar strong, .payment-status-grid strong { display: block; color: #1d2129; font-size: 15px; line-height: 1.4; }
+.quote-summary-bar .quote-total { color: #1890ff; font-size: 18px; }
+.quote-item-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.quote-item-editor { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; background: #f7f8fa; border: 1px solid #eef0f3; }
+.quote-fee-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: center; gap: 8px; }
+.quote-fee-row :deep(.el-input-number) { width: 100%; }
+.quote-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.quote-tip { color: #86909c; font-size: 12px; line-height: 1.6; margin-top: 8px !important; }
+.payment-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.payment-proof-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.payment-proof-card { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 10px; background: #f7f8fa; border: 1px solid #eef0f3; }
+.payment-proof-thumb, .payment-proof-placeholder { width: 64px; height: 64px; flex-shrink: 0; border-radius: 8px; }
+.payment-proof-placeholder { display: inline-flex; align-items: center; justify-content: center; background: #e6f4ff; color: #1890ff; font-size: 13px; font-weight: 600; }
+.payment-proof-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; line-height: 1.4; }
+.payment-proof-info strong { color: #1d2129; font-size: 14px; }
+.payment-proof-info span { color: #86909c; font-size: 12px; }
+.payment-proof-info a { color: #1890ff; font-size: 12px; text-decoration: none; }
+.payment-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.payment-paid-tip { color: #52c41a; font-size: 13px; }
 .drawer-section .el-textarea { margin-bottom: 10px; }
 .drawer-section .el-button { margin-top: 2px; }
 .drawer-footer { width: 100%; display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
@@ -1388,9 +1786,11 @@ const confirmExportExcel = async () => {
 .status-tag { font-weight: 600; font-size: 12px; }
 .status-dropdown-trigger { display: inline-flex; cursor: pointer; outline: none; }
 .status-dropdown-caret { margin-left: 4px; font-size: 10px; }
-.status-待处理 { background: #fff7e6 !important; color: #ff9800 !important; border-color: #ffd666 !important; }
-.status-维修中 { background: #e6f4ff !important; color: #1890ff !important; border-color: #91d5ff !important; }
-.status-已发货 { background: #e6f7f0 !important; color: #52c41a !important; border-color: #95de64 !important; }
+.status-已提交, .status-待处理 { background: #e6f4ff !important; color: #1890ff !important; border-color: #91d5ff !important; }
+.status-运输中, .status-已签收 { background: #fff7e6 !important; color: #ff9800 !important; border-color: #ffd666 !important; }
+.status-处理中, .status-维修中 { background: #e6f4ff !important; color: #1890ff !important; border-color: #91d5ff !important; }
+.status-已回寄, .status-已发货, .status-已完成 { background: #e6f7f0 !important; color: #52c41a !important; border-color: #95de64 !important; }
+.status-已取消 { background: #fff1f0 !important; color: #f56c6c !important; border-color: #ffccc7 !important; }
 .status-已处理 { background: #f0f2f5 !important; color: #86909c !important; border-color: #d9d9d9 !important; }
 .update-time { font-size: 11px; color: #86909c; margin-top: 4px; }
 

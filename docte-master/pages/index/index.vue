@@ -482,78 +482,53 @@
 						</view>
 					</view>
 				</view>
-				<view class="module-section-head single"><text>报价确认与维修授权</text></view>
-				<view class="quote-card">
-					<view class="quote-head">
+				<view class="module-section-head single"><text>维修报价</text></view>
+				<view class="billing-card quote-sheet-card">
+					<view class="billing-head">
 						<view>
-							<text>检测报价单</text>
-							<text>{{ getQuoteMeta(detailOrder).desc }}</text>
+							<text>维修报价单</text>
+							<text>{{ getBillingMeta(detailOrder).desc }}</text>
 						</view>
-						<text :class="['tag', 'tag-' + getQuoteMeta(detailOrder).tone]">{{ getQuoteMeta(detailOrder).label }}</text>
+						<text :class="['tag', 'tag-' + getBillingMeta(detailOrder).tone]">{{ getBillingMeta(detailOrder).label }}</text>
 					</view>
-					<view v-if="detailQuoteItems.length" class="quote-items">
-						<view v-for="(item, index) in detailQuoteItems" :key="item.name + index" class="quote-item-row">
-							<view class="quote-item-main">
-								<text>{{ item.name }}</text>
-								<text>{{ item.desc || item.partName || '按检测结果维修' }}</text>
+					<view v-if="detailQuoteItems.length" class="quote-line-list">
+						<view v-for="(item, index) in detailQuoteItems" :key="item.name + index" class="quote-line-item">
+							<view class="quote-line-copy">
+								<text>{{ item.name || `维修项目 ${index + 1}` }}</text>
+								<text v-if="item.desc">{{ item.desc }}</text>
+								<view class="quote-line-fees">
+									<text v-if="item.partsFee">配件 {{ formatMoney(item.partsFee) }}</text>
+									<text v-if="item.laborFee">工时 {{ formatMoney(item.laborFee) }}</text>
+								</view>
 							</view>
-							<view class="quote-item-fees">
-								<text>配件 {{ formatMoney(item.partsFee) }}</text>
-								<text>工时 {{ formatMoney(item.laborFee) }}</text>
-							</view>
+							<text class="quote-line-price">{{ formatMoney(getQuoteItemTotal(item)) }}</text>
 						</view>
 					</view>
-					<view v-else class="quote-empty">
-						<text>设备签收并完成检测后，会在这里展示维修项目、配件、工时和总价。</text>
+					<view v-else-if="getQuoteTotal(detailOrder)" class="billing-empty">
+						<text>维修费用已由后台确认，合计 {{ getBillingAmountText(detailOrder) }}。如需费用明细可联系售后客服。</text>
 					</view>
-					<view v-if="detailQuoteItems.length" class="quote-summary">
-						<view><text>配件费</text><text>{{ formatMoney(detailOrder.partsFee) }}</text></view>
-						<view><text>工时费</text><text>{{ formatMoney(detailOrder.laborFee) }}</text></view>
-						<view class="quote-total"><text>合计</text><text>{{ formatMoney(getQuoteTotal(detailOrder)) }}</text></view>
+					<view v-else class="billing-empty">
+						<text>工程师检测完成后，这里会显示维修项目、费用明细和下一步操作。</text>
 					</view>
-					<view class="authorization-panel">
-						<view>
-							<text>维修授权</text>
-							<text>{{ getAuthorizationMeta(detailOrder).desc }}</text>
-						</view>
-						<text :class="['tag', 'tag-' + getAuthorizationMeta(detailOrder).tone]">{{ getAuthorizationMeta(detailOrder).label }}</text>
+					<view class="quote-total-box">
+						<text>合计应付</text>
+						<text>{{ getBillingAmountText(detailOrder) }}</text>
+						<text>{{ getPaymentMeta(detailOrder).desc }}</text>
 					</view>
-					<view v-if="canConfirmRepair(detailOrder)" class="primary-button tap detail-action-button" @click="confirmRepairAuthorization(detailOrder)">确认报价并授权维修</view>
-				</view>
-				<view class="module-section-head single"><text>支付/对公转账凭证</text></view>
-				<view class="payment-card">
-					<view class="payment-head">
-						<view>
-							<text>费用留痕</text>
-							<text>{{ getPaymentMeta(detailOrder).desc }}</text>
-						</view>
-						<text :class="['tag', 'tag-' + getPaymentMeta(detailOrder).tone]">{{ getPaymentMeta(detailOrder).label }}</text>
-					</view>
-					<view class="payment-account">
-						<view><text>应付金额</text><text>{{ detailQuoteItems.length ? formatMoney(getQuoteTotal(detailOrder)) : '待报价' }}</text></view>
-						<view><text>支付方式</text><text>对公转账 / 线下支付</text></view>
-					</view>
-					<view v-if="detailPaymentProofs.length" class="payment-proof-grid">
+					<view v-if="detailPaymentProofs.length" class="payment-proof-grid billing-proof-grid">
 						<view v-for="(proof, index) in detailPaymentProofs" :key="proof.id || proof.url || index" class="payment-proof-thumb tap" @click="previewPaymentProof(index)">
 							<image class="payment-proof-image" :src="proof.url || proof.path" mode="aspectFill"></image>
 							<text>{{ proof.time || '已上传' }}</text>
 						</view>
 					</view>
-					<view v-if="canUploadPaymentProof(detailOrder)" class="ghost-button tap payment-upload-button" :class="{ disabled: paymentProofUploading }" @click="uploadPaymentProof(detailOrder)">
-						{{ paymentProofUploading ? '上传中...' : '上传转账/支付凭证' }}
-					</view>
-				</view>
-				<view class="module-section-head single"><text>发票进度</text></view>
-				<view class="info-line-card invoice-detail-card">
-					<view class="info-line-icon invoice-bg"><view class="glyph glyph-invoice"><view class="glyph-extra"></view></view></view>
-					<view class="info-line-copy">
-						<text>{{ detailInvoiceOrder.invoiceType || '电子普通发票' }}</text>
-						<text>{{ getInvoiceMeta(detailInvoiceOrder).desc }}</text>
-					</view>
-					<view class="invoice-detail-actions">
-						<text :class="['tag', 'tag-' + getInvoiceMeta(detailInvoiceOrder).tone]">{{ getInvoiceMeta(detailInvoiceOrder).label }}</text>
-						<view v-if="getInvoiceStatusKey(detailInvoiceOrder) === 'available'" class="invoice-mini-button tap" @click="handleInvoiceAction(detailInvoiceOrder)">申请开票</view>
-						<view v-else-if="getInvoiceStatusKey(detailInvoiceOrder) === 'issued'" class="invoice-mini-button tap" @click="handleInvoiceAction(detailInvoiceOrder)">查看发票</view>
+					<view class="quote-action-stack">
+						<view v-if="getBillingAction(detailOrder).visible" class="primary-button tap detail-action-button" :class="{ disabled: getBillingAction(detailOrder).disabled }" @click="handleBillingAction(detailOrder)">
+							{{ getBillingAction(detailOrder).text }}
+						</view>
+						<view v-if="getPaymentProofAction(detailOrder).visible" class="quote-secondary-action tap" :class="{ disabled: getPaymentProofAction(detailOrder).disabled }" @click="handlePaymentProofAction(detailOrder)">
+							{{ getPaymentProofAction(detailOrder).text }}
+						</view>
+						<text v-else-if="getPaymentProofAction(detailOrder).hint" class="quote-secondary-hint">{{ getPaymentProofAction(detailOrder).hint }}</text>
 					</view>
 				</view>
 			</view>
@@ -1330,8 +1305,11 @@ import {
 	uploadVideo
 } from '@/api/content'
 import {
+	createRepairWechatPay,
 	getRepairDetail,
 	getRepairList,
+	syncRepairWechatPay,
+	uploadRepairPaymentProof,
 	submitRepair as submitRepairOrder
 } from '@/api/repair'
 
@@ -1365,6 +1343,7 @@ const packageQueryLoading = ref(false)
 const packageQuerySearched = ref(false)
 const repairSubmitting = ref(false)
 const invoiceSubmitting = ref(false)
+const paymentSubmitting = ref(false)
 const paymentProofUploading = ref(false)
 const feedbackType = ref('建议')
 const feedbackContactKind = ref('phone')
@@ -1528,7 +1507,7 @@ const moduleMap = {
 	'repair-success': { title: '提交成功', subtitle: '工程师已收到您的报修申请' },
 	track: { title: '维修进度', subtitle: '查看提交、物流、处理与回寄状态' },
 	'package-query': { title: '包裹查询', subtitle: '按快递单号查询是否签收和当前处理状态' },
-	'order-detail': { title: '工单详情', subtitle: '维修时间线与发票进度' },
+	'order-detail': { title: '工单详情', subtitle: '维修时间线与费用发票' },
 	survey: { title: '调研有礼', subtitle: '扫码参与调研，领取专属维保福利' },
 	diag: { title: '故障自查', subtitle: '选择产品类型和故障类型，查看排查建议' },
 	warranty: { title: '保修政策', subtitle: '文字形式展示保修范围、期限和注意事项' },
@@ -2019,9 +1998,12 @@ const normalizeOrder = (item = {}) => {
 		trackingNo && `寄出 ${logisticsCompany ? `${logisticsCompany} ` : ''}${trackingNo}`
 	].filter(Boolean)
 	const quoteItems = normalizeQuoteItems({ ...merged, status: statusText, statusGroup: meta.statusGroup })
-	const partsFee = Number(merged.partsFee ?? merged.materialFee ?? merged.quote?.partsFee ?? sumQuoteFee(quoteItems, 'partsFee')) || 0
-	const laborFee = Number(merged.laborFee ?? merged.workFee ?? merged.quote?.laborFee ?? sumQuoteFee(quoteItems, 'laborFee')) || 0
-	const totalFee = Number(merged.totalFee ?? merged.amount ?? merged.price ?? merged.quote?.totalFee ?? partsFee + laborFee) || 0
+	const partsFee = Number(merged.partsFee ?? merged.parts_fee ?? merged.materialFee ?? merged.material_fee ?? merged.quote?.partsFee ?? merged.quote?.parts_fee ?? sumQuoteFee(quoteItems, 'partsFee')) || 0
+	const laborFee = Number(merged.laborFee ?? merged.labor_fee ?? merged.workFee ?? merged.work_fee ?? merged.quote?.laborFee ?? merged.quote?.labor_fee ?? sumQuoteFee(quoteItems, 'laborFee')) || 0
+	const totalFee = Number(merged.totalFee ?? merged.total_fee ?? merged.total_price ?? merged.amount ?? merged.price ?? merged.quote?.totalFee ?? merged.quote?.total_price ?? partsFee + laborFee) || 0
+	const paymentProofs = Array.isArray(merged.paymentProofs)
+		? merged.paymentProofs
+		: (Array.isArray(merged.payment_proofs) ? merged.payment_proofs : [])
 
 	return {
 		id: orderId,
@@ -2045,23 +2027,24 @@ const normalizeOrder = (item = {}) => {
 		tone: meta.tone,
 		reached: meta.reached,
 		time: formatDateTime(updateTime, 5, 16) || merged.time || '',
-		price: merged.price || merged.amount || merged.totalFee || (totalFee ? formatMoney(totalFee) : ''),
+		price: merged.price || merged.amount || merged.totalFee || merged.total_fee || merged.total_price || (totalFee ? formatMoney(totalFee) : ''),
 		date: formatDateTime(createTime, 0, 10),
 		doneTime: merged.doneTime || merged.expectedDoneTime || '待后台同步',
-		invoiceStatus: merged.invoiceStatus,
+		invoiceStatus: merged.invoiceStatus || merged.invoice_status,
 		invoiced: merged.invoiced,
-		invoiceTitle: merged.invoiceTitle,
-		invoiceNo: merged.invoiceNo,
-		invoiceDate: merged.invoiceDate,
-		invoiceUrl: merged.invoiceUrl,
-		quoteStatus: merged.quoteStatus || merged.quote?.status || (quoteItems.length ? 'issued' : 'pending'),
-		authorizationStatus: merged.authorizationStatus || merged.authStatus || (localPatch.authorizationStatus || ''),
-		paymentStatus: merged.paymentStatus || (Array.isArray(merged.paymentProofs) && merged.paymentProofs.length ? 'uploaded' : 'pending'),
+		invoiceTitle: merged.invoiceTitle || merged.invoice_title,
+		invoiceNo: merged.invoiceNo || merged.invoice_no,
+		invoiceDate: merged.invoiceDate || merged.invoice_date,
+		invoiceUrl: merged.invoiceUrl || merged.invoice_url,
+		quoteStatus: merged.quoteStatus || merged.quote_status || merged.quote?.status || (quoteItems.length ? 'issued' : 'pending'),
+		authorizationStatus: merged.authorizationStatus || merged.authorization_status || merged.authStatus || (localPatch.authorizationStatus || ''),
+		authorizationTime: merged.authorizationTime || merged.authorization_time || localPatch.authorizationTime || '',
+		paymentStatus: merged.paymentStatus || merged.payment_status || (paymentProofs.length ? 'uploaded' : 'pending'),
 		quoteItems,
 		partsFee,
 		laborFee,
 		totalFee,
-		paymentProofs: Array.isArray(merged.paymentProofs) ? merged.paymentProofs : [],
+		paymentProofs,
 		timeline: Array.isArray(merged.timeline) ? merged.timeline : []
 	}
 }
@@ -2084,23 +2067,14 @@ const writeStorage = (key, value) => {
 	}
 }
 
-const createDemoQuoteItems = (item = {}) => {
-	const isQuoteStage = ['处理中', '已回寄', '已完成'].includes(item.statusGroup || item.status)
-	if (!isQuoteStage) return []
-	return [
-		{ name: '故障检测与清洁', desc: '拆机检测、清洁消毒与基础调试', partsFee: 0, laborFee: 80 },
-		{ name: '轴承/密封件更换', desc: '按检测结果更换磨损配件', partsFee: 180, laborFee: 120 }
-	]
-}
-
 const normalizeQuoteItems = (item = {}) => {
-	const rawItems = item.quoteItems || item.repairItems || item.quote?.items || item.quotation?.items
-	const list = Array.isArray(rawItems) && rawItems.length ? rawItems : createDemoQuoteItems(item)
+	const rawItems = item.quoteItems || item.quote_items || item.repairItems || item.repair_items || item.quote?.items || item.quotation?.items
+	const list = Array.isArray(rawItems) && rawItems.length ? rawItems : []
 	return list.map((row = {}) => ({
 		name: row.name || row.title || row.projectName || '维修项目',
 		desc: row.desc || row.description || row.remark || '',
-		partsFee: Number(row.partsFee ?? row.partFee ?? row.materialFee ?? row.partsAmount ?? 0) || 0,
-		laborFee: Number(row.laborFee ?? row.workFee ?? row.serviceFee ?? row.laborAmount ?? 0) || 0
+		partsFee: Number(row.partsFee ?? row.parts_fee ?? row.partFee ?? row.part_fee ?? row.materialFee ?? row.material_fee ?? row.partsAmount ?? row.parts_amount ?? 0) || 0,
+		laborFee: Number(row.laborFee ?? row.labor_fee ?? row.workFee ?? row.work_fee ?? row.serviceFee ?? row.service_fee ?? row.laborAmount ?? row.labor_amount ?? 0) || 0
 	}))
 }
 
@@ -2491,6 +2465,8 @@ const patchOrderRecord = (orderId, patch = {}) => {
 
 const getQuoteTotal = (order = {}) => Number(order.totalFee || 0) || sumQuoteFee(order.quoteItems || [], 'partsFee') + sumQuoteFee(order.quoteItems || [], 'laborFee')
 
+const getQuoteItemTotal = (item = {}) => (Number(item.partsFee) || 0) + (Number(item.laborFee) || 0)
+
 const getQuoteMeta = (order = {}) => {
 	if (!order.id) return { label: '待同步', tone: 'muted', desc: '请选择一个工单查看报价。' }
 	if (!Array.isArray(order.quoteItems) || !order.quoteItems.length) return { label: '待检测', tone: 'muted', desc: '工程师检测完成后会生成正式报价。' }
@@ -2500,38 +2476,158 @@ const getQuoteMeta = (order = {}) => {
 }
 
 const getAuthorizationMeta = (order = {}) => {
-	if (!Array.isArray(order.quoteItems) || !order.quoteItems.length) return { label: '待报价', tone: 'muted', desc: '检测报价生成后才需要授权。' }
+	if (!getQuoteTotal(order)) return { label: '待报价', tone: 'muted', desc: '检测报价生成后才需要授权。' }
 	if (order.authorizationStatus === 'confirmed') return { label: '已授权', tone: 'ok', desc: order.authorizationTime ? `客户已于 ${order.authorizationTime} 授权维修。` : '客户已授权维修。' }
 	return { label: '待授权', tone: 'warn', desc: '客户确认报价后，后台再安排维修。' }
 }
 
 const getPaymentMeta = (order = {}) => {
 	const proofs = Array.isArray(order.paymentProofs) ? order.paymentProofs : []
-	if (!getQuoteTotal(order)) return { label: '待报价', tone: 'muted', desc: '报价金额确认后，可上传付款或对公转账凭证。' }
+	if (!getQuoteTotal(order)) return { label: '待报价', tone: 'muted', desc: '报价金额确认后，可微信支付；企业客户也可上传对公转账凭证。' }
+	if (order.paymentStatus === 'paid') return { label: '已支付', tone: 'ok', desc: '微信支付已完成，系统已自动确认到账。' }
 	if (proofs.length || order.paymentStatus === 'uploaded') return { label: '待核销', tone: 'warn', desc: '凭证已留痕，等待财务核对到账。' }
-	if (order.paymentStatus === 'paid') return { label: '已支付', tone: 'ok', desc: '财务已确认到账。' }
-	return { label: '待上传', tone: 'muted', desc: '如该维修需要收费，请上传支付截图或对公转账凭证。' }
+	return { label: '待支付', tone: 'warn', desc: '可直接微信支付；企业客户可走对公转账并上传凭证。' }
 }
 
-const canConfirmRepair = (order = {}) => Array.isArray(order.quoteItems) && order.quoteItems.length && order.authorizationStatus !== 'confirmed'
+const getBillingAmountText = (order = {}) => {
+	const total = getQuoteTotal(order)
+	return total ? formatMoney(total) : '待后台报价'
+}
+
+const getBillingMeta = (order = {}) => {
+	const quoteTotal = getQuoteTotal(order)
+	const invoiceMeta = getInvoiceMeta(resolveOrderRecord(order))
+	if (!order.id) return { label: '待同步', tone: 'muted', desc: '请选择一个工单查看报价。' }
+	if (!quoteTotal) return { label: '待报价', tone: 'muted', desc: '工程师检测后会在这里给出正式报价。' }
+	if (order.paymentStatus === 'paid') return { label: '已支付', tone: 'ok', desc: invoiceMeta.desc || '微信支付已完成，订单已自动进入后续维修流程。' }
+	if (Array.isArray(order.paymentProofs) && order.paymentProofs.length) return { label: '待核销', tone: 'warn', desc: '付款凭证已上传，等待财务核对到账。' }
+	return { label: '待支付', tone: 'warn', desc: '请核对维修项目和金额，确认后可直接微信支付。' }
+}
+
+const getBillingAction = (order = {}) => {
+	if (!order.id) return { visible: false, text: '', disabled: true }
+	if (canPayRepair(order)) {
+		return {
+			visible: true,
+			text: paymentSubmitting.value ? '支付中...' : '确认并支付',
+			disabled: paymentSubmitting.value,
+			type: 'wechat-pay'
+		}
+	}
+	const invoiceStatus = getInvoiceStatusKey(resolveOrderRecord(order))
+	if (invoiceStatus === 'available') return { visible: true, text: '申请开票', disabled: false, type: 'apply-invoice' }
+	if (invoiceStatus === 'issued') return { visible: true, text: '查看发票', disabled: false, type: 'view-invoice' }
+	return { visible: false, text: '', disabled: true }
+}
+
+const getPaymentProofAction = (order = {}) => {
+	const proofs = Array.isArray(order.paymentProofs) ? order.paymentProofs : []
+	if (!order.id || !getQuoteTotal(order)) return { visible: false, text: '', disabled: true, hint: '' }
+	if (order.paymentStatus === 'paid') return { visible: false, text: '', disabled: true, hint: '微信支付已完成，无需上传截图。' }
+	if (proofs.length || order.paymentStatus === 'uploaded') {
+		return { visible: false, text: '', disabled: true, hint: '付款凭证已上传，等待后台核销。' }
+	}
+	return {
+		visible: true,
+		text: paymentProofUploading.value ? '上传中...' : '企业对公转账 / 上传凭证',
+		disabled: paymentProofUploading.value,
+		hint: ''
+	}
+}
+
+const handleBillingAction = (order = {}) => {
+	const action = getBillingAction(order)
+	if (!action.visible || action.disabled) return
+	if (action.type === 'wechat-pay') {
+		payRepairQuote(order)
+		return
+	}
+	handleInvoiceAction(order)
+}
+
+const handlePaymentProofAction = (order = {}) => {
+	const action = getPaymentProofAction(order)
+	if (!action.visible || action.disabled) return
+	uploadPaymentProof(order)
+}
+
+const canPayRepair = (order = {}) => {
+	const proofs = Array.isArray(order.paymentProofs) ? order.paymentProofs : []
+	return Boolean(
+		order.id &&
+		getQuoteTotal(order) > 0 &&
+		order.quoteStatus !== 'rejected' &&
+		order.paymentStatus !== 'paid' &&
+		order.paymentStatus !== 'uploaded' &&
+		!proofs.length
+	)
+}
 
 const canUploadPaymentProof = (order = {}) => Boolean(order.id && getQuoteTotal(order) > 0)
 
-const confirmRepairAuthorization = (order = {}) => {
-	if (!canConfirmRepair(order)) return
+const payRepairQuote = (order = {}) => {
+	if (!canPayRepair(order) || paymentSubmitting.value) return
 	uni.showModal({
-		title: '确认维修授权',
-		content: `确认报价总额 ${formatMoney(getQuoteTotal(order))}，并授权工程师继续维修？`,
-		confirmText: '确认授权',
+		title: '确认并支付',
+		content: `确认维修报价 ${formatMoney(getQuoteTotal(order))}，并使用微信支付？`,
+		confirmText: '去支付',
 		cancelText: '再看看',
-		success: ({ confirm }) => {
+		success: async ({ confirm }) => {
 			if (!confirm) return
-			patchOrderRecord(order.id, {
-				authorizationStatus: 'confirmed',
-				authorizationTime: todayText(),
-				quoteStatus: 'confirmed'
-			})
-			uni.showToast({ title: '已授权维修', icon: 'success' })
+			let loadingShown = false
+			let paymentFinished = false
+			try {
+				paymentSubmitting.value = true
+				uni.showLoading({ title: '创建支付' })
+				loadingShown = true
+				const paymentOrder = await createRepairWechatPay(order.recordId || order.id)
+				const paymentParams = paymentOrder.payment || {}
+				if (!paymentParams.timeStamp || !paymentParams.nonceStr || !paymentParams.package || !paymentParams.paySign) {
+					throw new Error('微信支付参数不完整，请稍后重试')
+				}
+
+				uni.hideLoading()
+				loadingShown = false
+				await new Promise((resolve, reject) => {
+					uni.requestPayment({
+						...paymentParams,
+						success: resolve,
+						fail: reject
+					})
+				})
+				paymentFinished = true
+
+				uni.showLoading({ title: '确认到账' })
+				loadingShown = true
+				const result = await syncRepairWechatPay(order.recordId || order.id, paymentOrder.outTradeNo)
+				const nextStatus = normalizeRepairStatus(result.status || result.statusGroup || 'fixing')
+				patchOrderRecord(order.id, {
+					authorizationStatus: result.authorizationStatus || result.authorization_status || 'confirmed',
+					quoteStatus: result.quoteStatus || result.quote_status || 'confirmed',
+					authorizationTime: result.authorizationTime || result.authorization_time || todayText(),
+					paymentStatus: result.paymentStatus || result.payment_status || 'paid',
+					status: nextStatus,
+					statusGroup: nextStatus,
+					tone: getOrderStatusTone({ statusGroup: nextStatus }),
+					reached: Math.max(0, repairStatusFlow.indexOf(nextStatus))
+				})
+				uni.hideLoading()
+				loadingShown = false
+				uni.showToast({ title: '支付成功', icon: 'success' })
+			} catch (error) {
+				console.warn('wechat pay failed:', error)
+				const message = error && (error.message || error.errMsg)
+					? (error.message || error.errMsg)
+					: '支付失败'
+				if (paymentFinished) {
+					uni.showToast({ title: '已支付，到账确认中', icon: 'none' })
+				} else {
+					uni.showToast({ title: message.includes('cancel') ? '已取消支付' : message, icon: 'none' })
+				}
+			} finally {
+				paymentSubmitting.value = false
+				if (loadingShown) uni.hideLoading()
+			}
 		}
 	})
 }
@@ -2565,13 +2661,15 @@ const uploadPaymentProof = async (order = {}) => {
 		} catch (error) {
 			console.warn('payment proof upload fallback:', error)
 		}
+		const nextProof = { id: `pay-${Date.now()}`, path, fileID: proofFileID, url: proofUrl, time: todayText() }
 		const nextProofs = [
 			...(Array.isArray(order.paymentProofs) ? order.paymentProofs : []),
-			{ id: `pay-${Date.now()}`, path, fileID: proofFileID, url: proofUrl, time: todayText() }
+			nextProof
 		]
+		const result = await uploadRepairPaymentProof(order.recordId || order.id, nextProof)
 		patchOrderRecord(order.id, {
-			paymentStatus: 'uploaded',
-			paymentProofs: nextProofs
+			paymentStatus: result.paymentStatus || result.payment_status || 'uploaded',
+			paymentProofs: Array.isArray(result.paymentProofs) ? result.paymentProofs : (Array.isArray(result.payment_proofs) ? result.payment_proofs : nextProofs)
 		})
 		uni.hideLoading()
 		loadingShown = false
@@ -8298,8 +8396,7 @@ onMounted(() => {
 	color: #6B7C97;
 }
 
-.quote-card,
-.payment-card {
+.billing-card {
 	padding: 28rpx;
 	border-radius: 28rpx;
 	background: #FFFFFF;
@@ -8307,145 +8404,185 @@ onMounted(() => {
 	box-sizing: border-box;
 }
 
-.quote-head,
-.payment-head,
-.authorization-panel {
+.quote-sheet-card {
+	border: 2rpx solid #EAF1FB;
+}
+
+.billing-head {
 	display: flex;
 	align-items: flex-start;
 	justify-content: space-between;
 	gap: 20rpx;
 }
 
-.quote-head > view,
-.payment-head > view,
-.authorization-panel > view {
+.billing-head > view {
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 8rpx;
 }
 
-.quote-head > view text:first-child,
-.payment-head > view text:first-child,
-.authorization-panel > view text:first-child {
+.billing-head > view text:first-child {
 	font-size: 30rpx;
 	font-weight: 800;
 	color: #0F1F3A;
 }
 
-.quote-head > view text:last-child,
-.payment-head > view text:last-child,
-.authorization-panel > view text:last-child {
+.billing-head > view text:last-child {
 	font-size: 23rpx;
 	line-height: 1.5;
 	color: #6B7C97;
 }
 
-.quote-items {
+.quote-line-list {
 	margin-top: 24rpx;
 	display: flex;
 	flex-direction: column;
 	gap: 16rpx;
 }
 
-.quote-item-row {
-	padding: 22rpx;
+.quote-line-item {
+	padding: 22rpx 0;
 	display: flex;
+	align-items: flex-start;
 	justify-content: space-between;
 	gap: 20rpx;
-	border-radius: 22rpx;
-	background: #F7FAFF;
-	box-sizing: border-box;
+	border-bottom: 2rpx solid #F1F5FB;
 }
 
-.quote-item-main,
-.quote-item-fees {
+.quote-line-item:last-child {
+	border-bottom: none;
+}
+
+.quote-line-copy {
+	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 8rpx;
 }
 
-.quote-item-main {
-	min-width: 0;
-	flex: 1;
-}
-
-.quote-item-main text:first-child {
+.quote-line-copy > text:first-child {
 	font-size: 27rpx;
 	font-weight: 800;
 	color: #0F1F3A;
 }
 
-.quote-item-main text:last-child,
-.quote-item-fees text {
-	font-size: 22rpx;
-	line-height: 1.4;
+.quote-line-copy > text:nth-child(2) {
+	font-size: 23rpx;
+	line-height: 1.5;
 	color: #6B7C97;
 }
 
-.quote-item-fees {
-	align-items: flex-end;
-	flex-shrink: 0;
+.quote-line-fees {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10rpx;
 }
 
-.quote-empty {
+.quote-line-fees text {
+	padding: 5rpx 12rpx;
+	border-radius: 999rpx;
+	background: #F2F7FF;
+	font-size: 21rpx;
+	color: #2B5EA8;
+}
+
+.quote-line-price {
+	flex-shrink: 0;
+	font-size: 28rpx;
+	font-weight: 900;
+	color: #0F1F3A;
+}
+
+.quote-total-box {
 	margin-top: 24rpx;
-	padding: 26rpx;
+	padding: 24rpx;
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
+	border-radius: 22rpx;
+	background: linear-gradient(135deg, #FFF7E6 0%, #FFFDF5 100%);
+	border: 2rpx solid #FFE4B5;
+	box-sizing: border-box;
+}
+
+.quote-total-box text:first-child {
+	font-size: 22rpx;
+	color: #A16207;
+}
+
+.quote-total-box text:nth-child(2) {
+	font-size: 42rpx;
+	font-weight: 900;
+	color: #D97706;
+}
+
+.quote-total-box text:last-child {
+	font-size: 23rpx;
+	line-height: 1.5;
+	color: #7C5A16;
+}
+
+.billing-empty {
+	margin-top: 24rpx;
+	padding: 24rpx;
 	border-radius: 22rpx;
 	background: #F7FAFF;
 	font-size: 24rpx;
 	line-height: 1.6;
 	color: #6B7C97;
-}
-
-.quote-summary,
-.payment-account {
-	margin-top: 24rpx;
-	padding: 22rpx;
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 18rpx;
-	border-radius: 22rpx;
-	background: #FFF7E6;
 	box-sizing: border-box;
 }
 
-.quote-summary > view,
-.payment-account > view {
-	display: flex;
-	flex-direction: column;
-	gap: 6rpx;
-}
-
-.quote-summary text:first-child,
-.payment-account text:first-child {
-	font-size: 22rpx;
-	color: #9A6A1F;
-}
-
-.quote-summary text:last-child,
-.payment-account text:last-child {
-	font-size: 27rpx;
-	font-weight: 800;
-	color: #0F1F3A;
-}
-
-.quote-summary .quote-total text:last-child {
-	color: #D97706;
-}
-
-.authorization-panel {
+.billing-proof-grid {
 	margin-top: 24rpx;
-	padding: 22rpx;
-	border-radius: 22rpx;
-	background: #F3F8FF;
 }
 
-.detail-action-button,
-.payment-upload-button {
+.detail-action-button {
 	margin-top: 24rpx;
 	height: 82rpx;
 	font-size: 26rpx;
+}
+
+.quote-action-stack {
+	margin-top: 24rpx;
+	display: flex;
+	flex-direction: column;
+	gap: 18rpx;
+}
+
+.quote-action-stack .detail-action-button {
+	margin-top: 0;
+}
+
+.quote-secondary-action,
+.quote-secondary-hint {
+	min-height: 64rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999rpx;
+	font-size: 24rpx;
+	line-height: 1.5;
+	box-sizing: border-box;
+}
+
+.quote-secondary-action {
+	border: 2rpx solid #D6E4F5;
+	background: #F8FBFF;
+	color: #1E6FE0;
+	font-weight: 800;
+}
+
+.quote-secondary-action.disabled {
+	opacity: 0.6;
+}
+
+.quote-secondary-hint {
+	padding: 0 20rpx;
+	background: #F7FAFF;
+	color: #6B7C97;
+	text-align: center;
 }
 
 .payment-proof-grid {

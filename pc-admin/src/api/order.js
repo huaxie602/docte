@@ -45,6 +45,16 @@ export const batchUpdateShipping = (token, shippingList) => {
   })
 }
 
+// 批量导入物流单：type=inbound 表示客户寄入签收，type=return 表示后台回寄发货
+export const batchImportLogistics = (token, type, rows, importDate = '') => {
+  return request.post(`${API_BASE.adminOrder}/batchImportLogistics`, {
+    token,
+    type,
+    rows,
+    importDate
+  })
+}
+
 // 更新工单备注
 export const updateRemarks = (token, orderId, adminRemark, printRemark) => {
   return request.post(`${API_BASE.adminOrder}/updateRemarks`, {
@@ -62,6 +72,24 @@ export const updateInvoiceStatus = (token, orderId, status, invoice = {}) => {
     order_id: orderId,
     status,
     invoice
+  })
+}
+
+// 更新/发布维修报价
+export const updateOrderQuote = (token, orderId, quote = {}) => {
+  return request.post(`${API_BASE.adminOrder}/updateOrderQuote`, {
+    token,
+    order_id: orderId,
+    quote
+  })
+}
+
+// 更新付款核销状态
+export const updatePaymentStatus = (token, orderId, status) => {
+  return request.post(`${API_BASE.adminOrder}/updatePaymentStatus`, {
+    token,
+    order_id: orderId,
+    status
   })
 }
 

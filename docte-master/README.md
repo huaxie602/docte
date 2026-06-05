@@ -146,6 +146,23 @@ unpackage/              编译输出
 
 说明：当前微信手机号登录已统一走 `cicada-client-user.loginWithWechat({ code })` 云对象。若后端后续希望登录也改成 HTTP，再补 `/auth/login` 或 `/auth/wechat-login` 并同步改前端登录调用。
 
+### 微信支付
+
+报价确认后，小程序维修详情页的主按钮会走 `cicada-client-order.createWechatPayPayment` 创建微信 JSAPI 预支付单，然后通过 `uni.requestPayment` 拉起支付。支付完成后，前端会调用 `syncWechatPayPayment`，服务端再向微信支付查单，只有微信返回 `SUCCESS` 且金额一致时才把工单写成 `payment_status=paid`。
+
+企业客户仍可走线下对公转账，备用入口会调用 `uploadPaymentProof`，订单会写成 `payment_status=uploaded` 和 `payment_method=offline_transfer`，后台再人工核销。
+
+上线前需要在 uniCloud 的 `cicada-client-order` 云函数环境变量中配置微信支付参数：
+
+- `WX_PAY_APPID`
+- `WX_PAY_MCH_ID`
+- `WX_PAY_SERIAL_NO`
+- `WX_PAY_NOTIFY_URL`
+- `WX_PAY_PRIVATE_KEY` 或 `WX_PAY_PRIVATE_KEY_BASE64`
+- `WX_PAY_API_V3_KEY`
+
+其中 `WX_PAY_NOTIFY_URL` 需要配置成 URL 化后的 `cicada-client-order/wechatPayNotify` 地址；否则前端主动同步仍可确认支付，但微信异步通知兜底不会生效。
+
 ### 交互预留
 
 前端还预留了这些能力，后端接入后可完善：

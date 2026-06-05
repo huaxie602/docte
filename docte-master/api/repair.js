@@ -98,6 +98,22 @@ export const cancelRepair = (id, reason) => {
   return getCloudObject().cancelOrder(withToken({ ...normalizeOrderId(id), reason })).then(unwrapCloudResult)
 }
 
+export const confirmRepairQuote = (id) => {
+  return getCloudObject().confirmQuote(withToken(normalizeOrderId(id))).then(unwrapCloudResult)
+}
+
+export const uploadRepairPaymentProof = (id, proof = {}) => {
+  return getCloudObject().uploadPaymentProof(withToken({ ...normalizeOrderId(id), proof })).then(unwrapCloudResult)
+}
+
+export const createRepairWechatPay = (id) => {
+  return getCloudObject().createWechatPayPayment(withToken(normalizeOrderId(id))).then(unwrapCloudResult)
+}
+
+export const syncRepairWechatPay = (id, outTradeNo = '') => {
+  return getCloudObject().syncWechatPayPayment(withToken({ ...normalizeOrderId(id), out_trade_no: outTradeNo })).then(unwrapCloudResult)
+}
+
 export const getRepairStats = () => {
   return Promise.resolve({})
 }

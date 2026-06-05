@@ -47,6 +47,16 @@ const buildItemsSummary = (items) => {
   }).join('、')
 }
 
+const normalizeQuoteItems = (order) => {
+  const rawItems = order.quote_items || order.quoteItems || order.quote?.items || []
+  return (Array.isArray(rawItems) ? rawItems : []).map((item = {}) => ({
+    name: item.name || item.title || item.projectName || '',
+    desc: item.desc || item.description || item.remark || '',
+    partsFee: Number(item.parts_fee ?? item.partsFee ?? item.partFee ?? item.materialFee ?? 0) || 0,
+    laborFee: Number(item.labor_fee ?? item.laborFee ?? item.workFee ?? item.serviceFee ?? 0) || 0
+  }))
+}
+
 // 后端工单数据转换为前端格式
 export const transformOrder = (order) => {
   if (!order) return null
@@ -54,6 +64,10 @@ export const transformOrder = (order) => {
   const shipOut = order.ship_out_info || {}
   const shipBack = order.ship_back_info || {}
   const invoiceInfo = order.invoice_info || {}
+  const quoteItems = normalizeQuoteItems(order)
+  const partsFee = Number(order.parts_fee ?? order.partsFee ?? quoteItems.reduce((sum, item) => sum + item.partsFee, 0)) || 0
+  const laborFee = Number(order.labor_fee ?? order.laborFee ?? quoteItems.reduce((sum, item) => sum + item.laborFee, 0)) || 0
+  const totalPrice = Number(order.total_price ?? order.totalPrice ?? partsFee + laborFee) || 0
   const itemsList = normalizeOrderItems(order)
   const firstItem = itemsList[0] || {}
   const images = normalizeUrlArray(
@@ -104,8 +118,17 @@ export const transformOrder = (order) => {
     engineerId: order.engineer_id || '',
     timeline: order.timeline || [],
 
-    // 价格
-    totalPrice: order.total_price || 0,
+    // 报价/付款
+    quoteItems,
+    quoteStatus: order.quote_status || order.quoteStatus || (totalPrice > 0 ? 'issued' : 'pending'),
+    quoteRemark: order.quote_remark || order.quoteRemark || '',
+    partsFee,
+    laborFee,
+    totalPrice,
+    authorizationStatus: order.authorization_status || order.authorizationStatus || '',
+    authorizationTime: order.authorization_time || order.authorizationTime || '',
+    paymentStatus: order.payment_status || order.paymentStatus || '',
+    paymentProofs: Array.isArray(order.payment_proofs) ? order.payment_proofs : (order.paymentProofs || []),
 
     // 发票信息（内部登记，不代表已接入税控开票）
     needInvoice: invoiceInfo.need_invoice || false,
