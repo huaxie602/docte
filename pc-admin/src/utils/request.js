@@ -1,12 +1,20 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { getErrorMessage } from './errorMessage.js'
 
 const request = axios.create({
   timeout: 10000
 })
 
 request.interceptors.request.use(
-  config => config,
+  config => {
+    const token = localStorage.getItem('adminToken')
+    if (token) {
+      config.headers = config.headers || {}
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
   error => Promise.reject(error)
 )
 
@@ -14,7 +22,7 @@ request.interceptors.response.use(
   response => {
     const res = response.data
     if (res.code !== 0) {
-      const errMsg = res.msg || res.message || '请求失败'
+      const errMsg = getErrorMessage(res)
       ElMessage.error(errMsg)
       return Promise.reject(new Error(errMsg))
     }
@@ -22,8 +30,9 @@ request.interceptors.response.use(
   },
   error => {
     console.error('请求错误:', error)
-    ElMessage.error(error.message || '网络错误')
-    return Promise.reject(error)
+    const errMsg = getErrorMessage(error.response && error.response.data, error.message || '网络错误')
+    ElMessage.error(errMsg)
+    return Promise.reject(new Error(errMsg))
   }
 )
 

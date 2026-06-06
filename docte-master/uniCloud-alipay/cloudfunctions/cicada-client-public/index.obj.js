@@ -24,6 +24,28 @@ const GUIDE_CATEGORY_ALIASES = {
   fault: ['自查指南', '故障自查']
 }
 
+const SUBSCRIPTION_SCENES = [
+  { scene: 'repair_submitted', title: '报修提交提醒' },
+  { scene: 'order_received', title: '设备签收提醒' },
+  { scene: 'quote_issued', title: '维修报价提醒' },
+  { scene: 'payment_confirmed', title: '付款到账提醒' },
+  { scene: 'order_shipped', title: '回寄发货提醒' },
+  { scene: 'order_completed', title: '工单完成提醒' }
+]
+
+function getEnvValue(...names) {
+  for (const name of names) {
+    const value = process.env[name]
+    if (value) return String(value).trim()
+  }
+  return ''
+}
+
+function getSubscriptionTemplateId(scene = '') {
+  const key = String(scene || '').trim().toUpperCase()
+  return getEnvValue(`WX_SUBSCRIBE_TEMPLATE_${key}`, `WECHAT_SUBSCRIBE_TEMPLATE_${key}`)
+}
+
 function normalizeGuide(item = {}, type = '') {
   return {
     id: item._id,
@@ -43,6 +65,17 @@ function normalizeGuide(item = {}, type = '') {
 }
 
 module.exports = {
+  async getSubscriptionConfig() {
+    try {
+      const templates = SUBSCRIPTION_SCENES
+        .map(item => ({ ...item, templateId: getSubscriptionTemplateId(item.scene) }))
+        .filter(item => item.templateId)
+      return { code: 0, data: { templates } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
   async getCategories({ forceRefresh = false } = {}) {
     try {
       const cacheKey = 'categories:online'

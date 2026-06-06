@@ -131,6 +131,10 @@ export const getWechat = async () => {
 	}
 }
 
+export const getSubscriptionConfig = () => getPublicCloudObject()
+	.getSubscriptionConfig({})
+	.then(unwrapCloudResult)
+
 export const getFaultTypes = async () => {
 	const [list, categories] = await Promise.all([
 		getPublicCloudObject().getFaultKb({}).then(unwrapCloudResult),
@@ -180,7 +184,9 @@ export const queryPackageStatus = (params = {}) => getOrderCloudObject()
 	.queryPackageStatus(withToken(params))
 	.then(unwrapCloudResult)
 
-export const applyInvoice = () => Promise.reject(new Error('开票申请云接口暂未接入'))
+export const applyInvoice = (data = {}) => getOrderCloudObject()
+	.applyInvoice(withToken(data))
+	.then(unwrapCloudResult)
 
 export const getInvoiceList = () => Promise.resolve({ list: [] })
 

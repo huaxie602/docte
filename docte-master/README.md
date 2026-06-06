@@ -163,6 +163,43 @@ unpackage/              编译输出
 
 其中 `WX_PAY_NOTIFY_URL` 需要配置成 URL 化后的 `cicada-client-order/wechatPayNotify` 地址；否则前端主动同步仍可确认支付，但微信异步通知兜底不会生效。
 
+### 订阅消息提醒
+
+小程序会在用户提交报修、查看进度、确认报价/支付、上传对公转账凭证前请求订阅消息授权。后台状态变更、报价发布、付款核销、微信支付到账后，云函数会尝试发送订阅消息，并把结果写入 `cicada_subscription_logs`。
+
+上线前需要在相关云函数环境变量中配置：
+
+- `WX_APPID`
+- `WX_SECRET`
+- `WX_SUBSCRIBE_TEMPLATE_REPAIR_SUBMITTED`
+- `WX_SUBSCRIBE_TEMPLATE_ORDER_RECEIVED`
+- `WX_SUBSCRIBE_TEMPLATE_QUOTE_ISSUED`
+- `WX_SUBSCRIBE_TEMPLATE_PAYMENT_CONFIRMED`
+- `WX_SUBSCRIBE_TEMPLATE_ORDER_SHIPPED`
+- `WX_SUBSCRIBE_TEMPLATE_ORDER_COMPLETED`
+
+也支持使用 `WECHAT_SUBSCRIBE_TEMPLATE_*` 作为模板 ID 变量前缀。模板字段当前按通用状态通知结构发送：`thing1`、`character_string2`、`phrase3`、`time4`、`thing5`。如果微信公众平台模板字段不同，需要同步调整 `cicada-admin-order` 和 `cicada-client-order` 云函数里的 `buildSubscriptionData`。
+
+手动验收流程：
+
+1. 在微信公众平台申请并启用上述订阅消息模板。
+2. 在 uniCloud 控制台配置 `WX_APPID`、`WX_SECRET` 和模板 ID 环境变量，并重新部署 `cicada-client-public`、`cicada-client-order`、`cicada-admin-order`。
+3. 在 `pc-admin` 中配置 `.env.local` 指向当前云空间，运行 `npm run check:urls`，确认后台 URL 化已命中最新部署的 `cicada-admin-order`。
+4. 运行 `npm run check:subscription`，确认所有订阅场景模板 ID 均已配置；任一场景显示 `missing` 时，订阅消息真机验收不能视为通过。
+4. 用微信开发者工具或真机打开小程序，提交报修或进入进度页，确认出现订阅授权弹窗；拒绝授权时主流程应继续。
+5. 在后台发布报价、核销付款、导入签收/回寄物流或修改工单状态，确认用户端能收到对应订阅消息。
+6. 查询 `cicada_subscription_logs`，确认成功记录为 `sent`；未配置模板、缺少 openid、发送失败时分别记录 `skipped` 或 `failed`，且后台主流程不失败。
+
+### Goal 验收清单
+
+当前 `goal.md` 覆盖发票闭环、后台服务端分页、页面拆分、待办中心和订阅消息提醒。除本地构建检查外，上线前建议按下面顺序做真实环境验收：
+
+1. 发票闭环：用已付款或已完成/已回寄工单在小程序提交发票申请，确认 `cicada_orders.invoice_info` 写入 `need_invoice=true`、`status=待开票`、抬头、税号、邮箱和备注；后台工单页能看到这些字段；后台改为 `已开具` 后，小程序刷新能看到最新状态。
+2. 分页和筛选：准备超过 100 条工单数据，在后台验证第 101 条及之后可通过分页看到；关键词、状态、设备型号、发票状态和待办筛选的总数与云函数 `getAdminOrderList` 返回的 `total` 一致；当前筛选全部导出时，导出提示数量与文件行数一致。
+3. 批量操作刷新：分别执行物流签收导入、回寄物流导入、报价发布、付款核销和发票状态更新，确认操作后列表仍保留当前筛选/分页语境并显示最新数据。
+4. 待办中心：用覆盖待签收、待报价、待核销、待开票、待回寄、异常工单的测试数据，确认后台首页每组数量与进入工单页后的筛选 `total` 一致；无 token 或无效 token 时应跳转登录或显示错误，不应误报为 0。
+5. 订阅消息：在微信开发者工具或真机完成授权、拒绝授权和模板发送失败三种路径验证；确认拒绝或发送失败不阻塞报修、报价确认、付款、后台状态更新等主流程，且 `cicada_subscription_logs` 有可追踪记录。
+
 ### 交互预留
 
 前端还预留了这些能力，后端接入后可完善：

@@ -37,6 +37,9 @@
           <el-option label="未发票" value="未发票"></el-option>
           <el-option label="已发票" value="已发票"></el-option>
         </el-select>
+        <el-tag v-if="activeTodoType" type="warning" closable @close="clearTodoFilter">
+          {{ activeTodoLabel }}
+        </el-tag>
       </div>
       <div class="toolbar-actions">
         <el-date-picker
@@ -173,7 +176,14 @@
     </div>
 
     <div style="display:flex;justify-content:flex-end;margin-top:20px; overflow-x: auto;">
-      <el-pagination v-model:current-page="wo.page" v-model:page-size="wo.pageSize" :total="filteredOrders.length" layout="prev, pager, next" background></el-pagination>
+      <el-pagination
+        v-model:current-page="wo.page"
+        v-model:page-size="wo.pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="totalOrders"
+        layout="sizes, prev, pager, next, total"
+        background>
+      </el-pagination>
     </div>
   </div>
 
@@ -631,13 +641,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import ExcelJS from 'exceljs'
 import { batchImportLogistics, batchUpdateShipping, getOrderList, updateInvoiceStatus, updateOrderQuote, updateOrderStatus, updatePaymentStatus, updateRemarks } from '../api/order.js'
+import { exportOrdersToWorkbook, formatOrderAttachments, formatOrderItems } from '../utils/orderExport.js'
 import { transformOrders } from '../utils/orderTransform.js'
 import { toEnglishStatus } from '../utils/orderStatus.js'
+import { openPrintWindow } from '../utils/orderPrint.js'
 import { downloadShippingTemplate, getLogisticsImportTypeLabel, parseShippingExcelFile } from '../utils/shippingImport.js'
 
 const route = useRoute()
@@ -669,6 +680,8 @@ const getInvoiceType = (status) => {
 }
 
 const normalizeInvoiceStatus = (order = {}) => {
+  if (order.invoiceStatus === '待开票' || order.invoiceStatus === '开具中') return '未发票'
+  if (order.invoiceStatus === '已开具') return '已发票'
   if (order.invoiceStatus === '已发票') return '已发票'
   if (order.invoiceStatus === '未发票') return '未发票'
   return '无需开票'
@@ -759,6 +772,14 @@ const loading = ref(false)
 const importing = ref(false)
 const quickStatusLoading = ref(false)
 const batchCompleting = ref(false)
+const todoTypeMap = {
+  inbound: '待签收',
+  quote: '待报价',
+  payment: '待核销',
+  invoice: '待开票',
+  return: '待回寄',
+  exception: '异常工单'
+}
 
 const exportableFields = [
   { label: '工单编号', key: 'id', getter: order => order.id },
@@ -790,6 +811,8 @@ const exportableFields = [
 ]
 
 const orders = ref([])
+const totalOrders = ref(0)
+const deviceModelOptions = ref([])
 const selectedOrders = ref([])
 const isPrinting = ref(false)
 const printTime = ref('')
@@ -803,6 +826,8 @@ const importResult = ref(null)
 const activeLogisticsImportType = ref('return')
 const shipDate = ref(new Date().toISOString().slice(0, 10))
 const searchInvoiceStatus = ref('')
+const activeTodoType = ref('')
+const activeTodoLabel = computed(() => todoTypeMap[activeTodoType.value] || '待办筛选')
 const activeLogisticsImportLabel = computed(() => getLogisticsImportTypeLabel(activeLogisticsImportType.value))
 const logisticsImportTip = computed(() => {
   return activeLogisticsImportType.value === 'inbound'
@@ -815,47 +840,106 @@ const loadOrders = async () => {
   try {
     const token = localStorage.getItem('adminToken')
     const statusFilter = wo.filter ? toEnglishStatus(wo.filter) : undefined
-    const data = await getOrderList(token, statusFilter, 1, 100)
-    const transformed = transformOrders(data)
-    if (transformed && transformed.length > 0) {
-      orders.value = transformed
-    }
+    const data = await getOrderList(token, statusFilter, wo.page, wo.pageSize, {
+      keyword: wo.search.trim(),
+      deviceModel: wo.deviceFilter,
+      invoiceStatus: searchInvoiceStatus.value,
+      todoType: activeTodoType.value,
+      responseMode: 'page'
+    })
+    const list = Array.isArray(data) ? data : (data.list || [])
+    orders.value = transformOrders(list)
+    totalOrders.value = Array.isArray(data) ? orders.value.length : Number(data.total || 0)
+    deviceModelOptions.value = Array.isArray(data.deviceModels) ? data.deviceModels : deviceModelOptions.value
+    selectedOrders.value = []
   } catch (error) {
-    console.log('API调用失败，使用演示数据')
+    orders.value = []
+    totalOrders.value = 0
+    ElMessage.error(error.message || '工单列表加载失败')
   } finally {
     loading.value = false
   }
 }
 
+const fetchAllFilteredOrders = async () => {
+  const token = localStorage.getItem('adminToken')
+  const statusFilter = wo.filter ? toEnglishStatus(wo.filter) : undefined
+  const pageSize = 100
+  let page = 1
+  let total = 0
+  const allOrders = []
+
+  while (true) {
+    const data = await getOrderList(token, statusFilter, page, pageSize, {
+      keyword: wo.search.trim(),
+      deviceModel: wo.deviceFilter,
+      invoiceStatus: searchInvoiceStatus.value,
+      todoType: activeTodoType.value,
+      responseMode: 'page'
+    })
+    const list = Array.isArray(data) ? data : (data.list || [])
+    total = Number((Array.isArray(data) ? list.length : data.total) || 0)
+    allOrders.push(...transformOrders(list))
+    if (allOrders.length >= total || list.length < pageSize) break
+    page += 1
+  }
+
+  return allOrders
+}
+
 const wo = reactive({ search: '', filter: '', deviceFilter: '', page: 1, pageSize: 10 })
 
 const deviceModels = computed(() => {
-  const models = [...new Set(orders.value.flatMap(o => (o.itemsList || []).map(item => item.product_model)).filter(Boolean))]
+  const models = [...new Set([
+    ...deviceModelOptions.value,
+    ...orders.value.flatMap(o => (o.itemsList || []).map(item => item.product_model)).filter(Boolean)
+  ])]
   return models.sort()
 })
 
-const filteredOrders = computed(() =>
-  orders.value.filter(o => {
-    const keyword = wo.search.trim()
-    const orderProductModels = (o.itemsList || []).map(item => item.product_model).filter(Boolean)
-    const orderProductSns = (o.itemsList || []).map(item => item.sn).filter(Boolean)
-    const searchableText = [o.customerName, o.phone, o.productModel, o.id, o.itemsSummary, ...orderProductModels, ...orderProductSns].filter(Boolean).join(' ')
-    return (!wo.filter || o.status === wo.filter) &&
-           (!wo.deviceFilter || orderProductModels.includes(wo.deviceFilter)) &&
-           (!searchInvoiceStatus.value || normalizeInvoiceStatus(o) === searchInvoiceStatus.value) &&
-           (!keyword || searchableText.includes(keyword))
-  })
-)
+const filteredOrders = computed(() => orders.value)
 
-const pagedOrders = computed(() => {
-  const start = (wo.page - 1) * wo.pageSize
-  return filteredOrders.value.slice(start, start + wo.pageSize)
-})
+const pagedOrders = computed(() => orders.value)
+
+const applyRouteFilters = () => {
+  const routeTodo = String(route.query.todo || '')
+  activeTodoType.value = todoTypeMap[routeTodo] ? routeTodo : ''
+  wo.filter = String(route.query.filter || '')
+}
+
+const clearTodoFilter = () => {
+  activeTodoType.value = ''
+}
 
 onMounted(() => {
-  if (route.query.filter) wo.filter = route.query.filter
+  applyRouteFilters()
   loadOrders()
 })
+
+watch(
+  () => [wo.search, wo.filter, wo.deviceFilter, searchInvoiceStatus.value, activeTodoType.value],
+  () => {
+    if (wo.page === 1) {
+      loadOrders()
+    } else {
+      wo.page = 1
+    }
+  }
+)
+
+watch(
+  () => [route.query.filter, route.query.todo],
+  () => {
+    applyRouteFilters()
+  }
+)
+
+watch(
+  () => [wo.page, wo.pageSize],
+  () => {
+    loadOrders()
+  }
+)
 
 const drawerVisible = ref(false)
 const currentOrder = ref(null)
@@ -1443,106 +1527,11 @@ const confirmSaveRemark = async () => {
   }
 }
 
-const escapeHtml = (value = '') => String(value)
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-
-const formatOrderItems = (items = []) => {
-  return items.map((item, index) => {
-    const lines = [
-      `产品${index + 1}: ${item.product_name || '-'}`,
-      `型号: ${item.product_model || '-'}`,
-      `SN: ${item.sn || '-'}`,
-      `购买日期: ${item.buy_date || '-'}`,
-      `故障描述: ${item.fault_desc || '-'}`
-    ]
-    return lines.join('；')
-  }).join('\n')
-}
-
-const formatOrderAttachments = (items = []) => {
-  return items.map((item, index) => {
-    const attachments = [
-      ...(item.voucher_urls || []).map(url => `购买凭证: ${url}`),
-      ...(item.image_urls || []).map(url => `故障图片: ${url}`),
-      ...(item.video_urls || []).map(url => `故障视频: ${url}`),
-      ...(item.media_urls || []).map(url => `历史附件: ${url}`)
-    ]
-    return attachments.length ? `产品${index + 1}\n${attachments.join('\n')}` : ''
-  }).filter(Boolean).join('\n')
-}
-
-const buildPrintSection = (order) => {
-  const itemsText = formatOrderItems(order.itemsList)
-  const rows = [
-    ['工单编号', order.id],
-    ['提交时间', order.submitTime],
-    ['当前状态', order.status],
-    ['诊所/单位', order.clinicName],
-    ['联系人', order.customerName],
-    ['联系电话', order.phone],
-    ['回寄地址', order.address],
-    ['产品明细', itemsText],
-    ['寄出物流', `${order.logisticsCompany || ''} ${order.logisticsNo || ''}`.trim()],
-    ['回寄物流', `${order.returnCompany || ''} ${order.returnNo || ''}`.trim()],
-    ['随件留言', order.printRemark]
-  ]
-
-  return `
-    <section class="print-section">
-      <h1>报修工单处理单</h1>
-      <table>
-        ${rows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value || '-')}</td></tr>`).join('')}
-      </table>
-      <div class="footer">
-        <span>工程师签字：____________</span>
-        <span>打印时间：${escapeHtml(new Date().toLocaleString('zh-CN', { hour12: false }))}</span>
-      </div>
-    </section>
-  `
-}
-
-const openPrintWindow = (printOrders) => {
-  if (!printOrders.length) return
-  const printWindow = window.open('', '_blank', 'width=900,height=700')
-  if (!printWindow) {
-    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
-    return
-  }
-
-  printWindow.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <title>工单打印-${escapeHtml(printOrders.map(item => item.id).join('_'))}</title>
-        <style>
-          body { font-family: "Microsoft YaHei", Arial, sans-serif; color: #1d2129; margin: 32px; }
-          h1 { font-size: 22px; margin: 0 0 18px; }
-          table { width: 100%; border-collapse: collapse; }
-          td { border: 1px solid #dcdfe6; padding: 10px 12px; font-size: 14px; vertical-align: top; }
-          td:first-child { width: 120px; background: #f5f7fa; font-weight: 700; }
-          .footer { margin-top: 28px; display: flex; justify-content: space-between; font-size: 13px; color: #606266; }
-          .print-section { page-break-after: always; }
-          .print-section:last-child { page-break-after: auto; }
-          @media print { body { margin: 18mm; } }
-        </style>
-      </head>
-      <body>
-        ${printOrders.map(buildPrintSection).join('')}
-      </body>
-    </html>
-  `)
-  printWindow.document.close()
-  printWindow.focus()
-  printWindow.print()
-}
-
 const printOrder = () => {
   if (!currentOrder.value) return
-  openPrintWindow([currentOrder.value])
+  if (!openPrintWindow([currentOrder.value])) {
+    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
+  }
 }
 
 const printSelectedOrders = () => {
@@ -1550,7 +1539,9 @@ const printSelectedOrders = () => {
     ElMessage.warning('请先勾选要打印的工单')
     return
   }
-  openPrintWindow(selectedOrders.value)
+  if (!openPrintWindow(selectedOrders.value)) {
+    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
+  }
 }
 
 const handleBatchPrint = async () => {
@@ -1609,21 +1600,6 @@ const handleImportFile = async (uploadFile) => {
   }
 }
 
-const downloadWorkbook = async (workbook, filename) => {
-  const buffer = await workbook.xlsx.writeBuffer()
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
-
 const confirmExportExcel = async () => {
   if (!selectedExportFields.value.length) {
     ElMessage.warning('请至少选择一个导出字段')
@@ -1631,26 +1607,11 @@ const confirmExportExcel = async () => {
   }
 
   const selectedFieldConfigs = exportableFields.filter(field => selectedExportFields.value.includes(field.key))
-  const sourceOrders = selectedOrders.value.length ? selectedOrders.value : filteredOrders.value
-  const dataToExport = sourceOrders.map(order => {
-    return selectedFieldConfigs.reduce((rowData, field) => {
-      const cellValue = field.getter(order)
-      rowData[field.label] = cellValue === undefined || cellValue === null ? '' : cellValue
-      return rowData
-    }, {})
-  })
-
-  const workbook = new ExcelJS.Workbook()
-  const worksheet = workbook.addWorksheet('工单明细')
-  worksheet.columns = selectedFieldConfigs.map(field => ({
-    header: field.label,
-    key: field.label,
-    width: Math.max(field.label.length * 2 + 4, 14)
-  }))
-  worksheet.addRows(dataToExport)
-  await downloadWorkbook(workbook, '报修工单导出.xlsx')
+  const usingSelectedOrders = selectedOrders.value.length > 0
+  const sourceOrders = usingSelectedOrders ? selectedOrders.value : await fetchAllFilteredOrders()
+  await exportOrdersToWorkbook(sourceOrders, selectedFieldConfigs)
   exportDialogVisible.value = false
-  ElMessage.success('导出成功')
+  ElMessage.success(`已导出${usingSelectedOrders ? '选中' : '当前筛选'}工单 ${sourceOrders.length} 条`)
 }
 </script>
 

@@ -35,17 +35,13 @@ function buildPasswordFields(password) {
 }
 
 async function verifyAdminToken(token, allowedRoles = ['admin']) {
-  console.log('verifyAdminToken 开始验证:', { token: token ? token.substring(0, 10) + '...' : 'undefined', allowedRoles })
   if (!token) throw new Error('鉴权失败')
   const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  console.log('数据库查询结果:', res.data.length, res.data[0] ? { role: res.data[0].role, disabled: res.data[0].disabled } : 'null')
   const user = res.data[0]
   if (!user || user.disabled || !allowedRoles.includes(user.role)) {
-    console.log('验证失败:', { hasUser: !!user, disabled: user?.disabled, role: user?.role, allowedRoles })
     throw new Error('无权限')
   }
   if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
-  console.log('验证通过')
   return user
 }
 
@@ -65,14 +61,11 @@ function verifyPassword(user, password) {
 module.exports = {
   _before() {
     // 处理 HTTP 请求参数
-    console.log('_before this keys:', Object.keys(this))
     const httpInfo = this.getHttpInfo && this.getHttpInfo()
-    console.log('httpInfo:', httpInfo)
     if (httpInfo && httpInfo.body) {
       try {
         const body = JSON.parse(httpInfo.body)
         this.params = body
-        console.log('解析后的参数:', body)
       } catch (e) {
         console.error('解析请求体失败:', e)
       }
@@ -92,22 +85,18 @@ module.exports = {
           ;({ username, password } = body)
         }
       }
-      console.log('登录请求:', { username, password })
       if (!username || !password) return { code: -1, msg: '用户名或密码错误' }
       const res = await db.collection('cicada_users')
         .where({ username })
         .limit(1)
         .get()
-      console.log('数据库查询结果:', res.data.length, res.data[0])
       if (!res.data.length) return { code: -1, msg: '用户名或密码错误' }
 
       const user = res.data[0]
-      console.log('用户角色检查:', { role: user.role, disabled: user.disabled, STAFF_ROLES })
       if (!STAFF_ROLES.includes(user.role) || user.disabled) {
         return { code: -1, msg: '无管理权限' }
       }
       const pwdCheck = verifyPassword(user, password)
-      console.log('密码验证结果:', pwdCheck, { hasHash: !!user.password_hash, hasSalt: !!user.password_salt, password: user.password })
       if (!pwdCheck) return { code: -1, msg: '用户名或密码错误' }
 
       const token = genToken()
@@ -224,7 +213,6 @@ module.exports = {
           ;({ token, action, staff } = body)
         }
       }
-      console.log('manageStaff 接收到的参数:', { token: token ? token.substring(0, 10) + '...' : 'undefined', action, staff })
       await verifyAdminToken(token, ['admin'])
       const col = db.collection('cicada_users')
       if (action === 'add') {

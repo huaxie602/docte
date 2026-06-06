@@ -47,6 +47,13 @@ Create these indexes in the uniCloud database console before production traffic.
 - `key` unique
 - `reset_time`
 
+## cicada_subscription_logs
+
+- `order_id, create_time desc`
+- `user_id, create_time desc`
+- `scene, create_time desc`
+- `status, create_time desc`
+
 ## Notes
 
 - Keep `order_no` unique. The code now uses a time prefix plus 32 bits of random suffix, but the unique index is still the final guard.

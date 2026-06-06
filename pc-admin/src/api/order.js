@@ -2,12 +2,17 @@ import request from '../utils/request.js'
 import { API_BASE } from '../config/api.js'
 
 // 获取工单列表
-export const getOrderList = (token, status, page = 1, pageSize = 20) => {
+export const getOrderList = (token, status, page = 1, pageSize = 20, filters = {}) => {
   return request.post(`${API_BASE.adminOrder}/getAdminOrderList`, {
     token,
     status,
     page,
-    pageSize
+    pageSize,
+    keyword: filters.keyword || '',
+    deviceModel: filters.deviceModel || '',
+    invoiceStatus: filters.invoiceStatus || '',
+    todoType: filters.todoType || '',
+    responseMode: filters.responseMode || 'array'
   })
 }
 
@@ -106,6 +111,11 @@ export const addTimeline = (token, orderId, title, desc) => {
 // 获取统计数据
 export const getStatistics = (token) => {
   return request.post(`${API_BASE.adminOrder}/getStatistics`, { token })
+}
+
+// 获取后台待办中心统计
+export const getTodoSummary = (token) => {
+  return request.post(`${API_BASE.adminOrder}/getTodoSummary`, { token })
 }
 
 // 获取服务数据总结

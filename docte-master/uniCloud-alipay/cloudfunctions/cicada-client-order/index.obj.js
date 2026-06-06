@@ -3,6 +3,11 @@ const crypto = require('crypto')
 
 const CREATE_ORDER_LIMIT = { windowMs: 60 * 1000, max: 8 }
 const WECHAT_PAY_API_BASE = 'https://api.mch.weixin.qq.com'
+const SUBSCRIPTION_SCENE_LABELS = {
+  repair_submitted: '报修已提交',
+  payment_confirmed: '付款已确认'
+}
+let wechatAccessTokenCache = { token: '', expireAt: 0 }
 
 function getEnvValue(...names) {
   for (const name of names) {
@@ -10,6 +15,106 @@ function getEnvValue(...names) {
     if (value) return String(value)
   }
   return ''
+}
+
+function getSubscriptionTemplateId(scene = '') {
+  const key = String(scene || '').trim().toUpperCase()
+  return getEnvValue(`WX_SUBSCRIBE_TEMPLATE_${key}`, `WECHAT_SUBSCRIBE_TEMPLATE_${key}`)
+}
+
+function getWechatAppConfig() {
+  const appId = getEnvValue('WX_APPID', 'WECHAT_APPID')
+  const secret = getEnvValue('WX_SECRET', 'WECHAT_SECRET')
+  if (!appId || !secret) throw new Error('未配置 WX_APPID/WX_SECRET')
+  return { appId, secret }
+}
+
+async function getWechatAccessToken() {
+  if (wechatAccessTokenCache.token && Date.now() < wechatAccessTokenCache.expireAt) {
+    return wechatAccessTokenCache.token
+  }
+  const config = getWechatAppConfig()
+  const tokenUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(config.appId)}&secret=${encodeURIComponent(config.secret)}`
+  const res = await uniCloud.httpclient.request(tokenUrl, {
+    method: 'GET',
+    dataType: 'json'
+  })
+  if (!res.data || !res.data.access_token) {
+    throw new Error(res.data && res.data.errmsg ? res.data.errmsg : '获取微信access_token失败')
+  }
+  wechatAccessTokenCache = {
+    token: res.data.access_token,
+    expireAt: Date.now() + Math.max(Number(res.data.expires_in || 7200) - 300, 60) * 1000
+  }
+  return wechatAccessTokenCache.token
+}
+
+async function sendWechatSubscribeMessage(payload = {}) {
+  const accessToken = await getWechatAccessToken()
+  const res = await uniCloud.httpclient.request(`https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${encodeURIComponent(accessToken)}`, {
+    method: 'POST',
+    dataType: 'json',
+    data: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  const data = res.data || {}
+  if (data.errcode && data.errcode !== 0) {
+    throw new Error(data.errmsg || `订阅消息发送失败(${data.errcode})`)
+  }
+  return data
+}
+
+function buildSubscriptionData(order = {}, scene = '', remark = '') {
+  const sceneLabel = SUBSCRIPTION_SCENE_LABELS[scene] || '工单状态更新'
+  return {
+    thing1: { value: sceneLabel.slice(0, 20) },
+    character_string2: { value: String(order.order_no || order._id || '').slice(0, 32) },
+    phrase3: { value: sceneLabel.slice(0, 10) },
+    time4: { value: formatTimelineTime(Date.now()) },
+    thing5: { value: String(remark || sceneLabel).slice(0, 20) }
+  }
+}
+
+async function logSubscriptionMessage(payload = {}) {
+  await db.collection('cicada_subscription_logs').add({
+    ...payload,
+    create_time: Date.now()
+  }).catch(() => {})
+}
+
+async function sendOrderSubscription(order = {}, scene = '', remark = '') {
+  const templateId = getSubscriptionTemplateId(scene)
+  const logBase = {
+    order_id: order._id || '',
+    order_no: order.order_no || '',
+    user_id: order.user_id || '',
+    scene,
+    template_id: templateId,
+    status: 'pending'
+  }
+  if (!templateId) {
+    await logSubscriptionMessage({ ...logBase, status: 'skipped', fail_reason: '未配置订阅消息模板ID' })
+    return
+  }
+  try {
+    const userRes = await db.collection('cicada_users').doc(order.user_id).get()
+    const user = userRes.data && userRes.data[0]
+    if (!user || !user.openid) {
+      await logSubscriptionMessage({ ...logBase, status: 'skipped', fail_reason: '用户缺少openid' })
+      return
+    }
+    await sendWechatSubscribeMessage({
+      touser: user.openid,
+      template_id: templateId,
+      page: `pages/index/index?module=track&orderId=${encodeURIComponent(order.order_no || order._id || '')}`,
+      data: buildSubscriptionData(order, scene, remark)
+    })
+    await logSubscriptionMessage({ ...logBase, openid: user.openid, status: 'sent' })
+  } catch (e) {
+    await logSubscriptionMessage({ ...logBase, status: 'failed', fail_reason: e.message || String(e) })
+  }
 }
 
 function normalizePrivateKey(value = '') {
@@ -480,6 +585,7 @@ async function markOrderWechatPaid(order = {}, transaction = {}) {
   }
 
   await db.collection('cicada_orders').doc(order._id).update(updateData)
+  await sendOrderSubscription({ ...order, ...updateData }, 'payment_confirmed', '微信支付已完成')
   return updateData
 }
 
@@ -551,7 +657,7 @@ module.exports = {
 
       const now = Date.now()
       const order_no = genOrderNo()
-      const orderRes = await db.collection('cicada_orders').add({
+      const newOrder = {
         order_no,
         user_id: user._id,
         status: 'pending',
@@ -562,7 +668,8 @@ module.exports = {
         timeline: [{ title: '提交报修单', desc: '您的报修申请已提交，等待客服审核', time: now, done: true }],
         update_time: now,
         create_time: now
-      })
+      }
+      const orderRes = await db.collection('cicada_orders').add(newOrder)
 
       orderId = orderRes.id
 
@@ -586,6 +693,7 @@ module.exports = {
         return db.collection('cicada_order_items').add({ ...data, order_id: orderId })
       }))
 
+      await sendOrderSubscription({ ...newOrder, _id: orderId }, 'repair_submitted', '报修申请已提交')
       return { code: 0, msg: '提交成功', data: { order_id: orderId, order_no } }
     } catch (e) {
       if (orderId) {
@@ -899,6 +1007,81 @@ module.exports = {
 
       await db.collection('cicada_orders').doc(order._id).update(updateData)
       return { code: 0, data: { ...updateData, ...exposeQuoteFields({ ...order, ...updateData }) } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 客户提交电子发票申请
+  async applyInvoice({
+    token,
+    orderId = '',
+    order_id = '',
+    invoiceType = '电子普通发票',
+    invoice_type = '',
+    titleType = 'company',
+    title_type = '',
+    title = '',
+    taxNo = '',
+    tax_no = '',
+    email = '',
+    remark = ''
+  }) {
+    try {
+      const user = await verifyUserToken(token)
+      const targetOrderId = order_id || orderId
+      const order = await findOwnedOrder(user._id, targetOrderId)
+      if (!order) return { code: -1, msg: '工单不存在或无权限' }
+      if (order.status === 'cancelled') return { code: -1, msg: '已取消工单不可申请开票' }
+      const billable = Number(order.total_price || 0) > 0 && order.payment_status === 'paid'
+      if (!['completed', 'shipped'].includes(order.status) && !billable) {
+        return { code: -1, msg: '维修完成或付款到账后才可申请开票' }
+      }
+
+      const invoiceTitle = normalizeText(title)
+      const invoiceTitleType = normalizeText(title_type || titleType || 'company') || 'company'
+      const invoiceTaxNo = normalizeText(tax_no || taxNo)
+      const invoiceEmail = normalizeText(email)
+      if (!invoiceTitle) return { code: -1, msg: '请填写发票抬头' }
+      if (invoiceTitleType === 'company' && !invoiceTaxNo) return { code: -1, msg: '请填写税号' }
+      if (!invoiceEmail) return { code: -1, msg: '请填写接收邮箱' }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(invoiceEmail)) return { code: -1, msg: '接收邮箱格式不正确' }
+
+      const now = Date.now()
+      const oldInvoice = order.invoice_info || {}
+      const invoiceInfo = {
+        ...oldInvoice,
+        need_invoice: true,
+        status: '待开票',
+        invoice_type: normalizeText(invoice_type || invoiceType || '电子普通发票') || '电子普通发票',
+        title_type: invoiceTitleType,
+        title: invoiceTitle,
+        tax_no: invoiceTaxNo,
+        email: invoiceEmail,
+        remark: normalizeText(remark),
+        apply_time: oldInvoice.apply_time || now,
+        update_time: now
+      }
+
+      const timeline = Array.isArray(order.timeline) ? order.timeline : []
+      const updateData = {
+        invoice_info: invoiceInfo,
+        update_time: now,
+        timeline: [
+          ...timeline,
+          {
+            title: '客户已提交开票申请',
+            desc: `${invoiceInfo.invoice_type}：${invoiceInfo.title}`,
+            time: now,
+            done: true
+          }
+        ]
+      }
+
+      const res = await db.collection('cicada_orders').doc(order._id).update(updateData)
+      if (!res.updated) return { code: -1, msg: '工单不存在' }
+
+      return { code: 0, data: invoiceInfo }
     } catch (e) {
       return { code: -1, msg: e.message }
     }

@@ -1289,6 +1289,7 @@ import {
 	getFaultTypes,
 	getFeePolicy,
 	getGuide,
+	getSubscriptionConfig,
 	getProductList,
 	applyInvoice,
 	getWechat,
@@ -1312,6 +1313,7 @@ import {
 	uploadRepairPaymentProof,
 	submitRepair as submitRepairOrder
 } from '@/api/repair'
+import { getInvoiceMeta, getInvoiceStatusKey, invoiceFlow } from './composables/invoiceFlow'
 
 const bootStart = Date.now()
 const logBoot = (stage) => console.log('[index-boot]', stage, Date.now() - bootStart)
@@ -1345,6 +1347,7 @@ const repairSubmitting = ref(false)
 const invoiceSubmitting = ref(false)
 const paymentSubmitting = ref(false)
 const paymentProofUploading = ref(false)
+const subscriptionTemplates = ref(null)
 const feedbackType = ref('建议')
 const feedbackContactKind = ref('phone')
 const feedbackText = ref('')
@@ -1363,6 +1366,40 @@ const logisticsList = [
 	{ value: '信丰快递', label: '信丰快递' },
 	{ value: '其他', label: '其他' }
 ]
+const subscriptionSceneMap = {
+	repair_submit: ['repair_submitted', 'order_received', 'quote_issued'],
+	track_view: ['quote_issued', 'payment_confirmed', 'order_shipped'],
+	quote_confirm: ['payment_confirmed', 'order_shipped', 'order_completed']
+}
+
+const loadSubscriptionTemplates = async () => {
+	if (Array.isArray(subscriptionTemplates.value)) return subscriptionTemplates.value
+	try {
+		const config = await getSubscriptionConfig()
+		subscriptionTemplates.value = Array.isArray(config.templates) ? config.templates : []
+	} catch (error) {
+		console.warn('load subscription templates failed:', error)
+		subscriptionTemplates.value = []
+	}
+	return subscriptionTemplates.value
+}
+
+const requestStatusSubscription = async (scene) => {
+	if (!uni.requestSubscribeMessage) return null
+	const sceneKeys = subscriptionSceneMap[scene] || []
+	const templates = await loadSubscriptionTemplates()
+	const tmplIds = templates
+		.filter(item => sceneKeys.includes(item.scene) && item.templateId)
+		.map(item => item.templateId)
+		.slice(0, 3)
+	if (!tmplIds.length) return null
+	try {
+		return await uni.requestSubscribeMessage({ tmplIds })
+	} catch (error) {
+		console.warn('request subscribe message failed:', error)
+		return null
+	}
+}
 const showLogisticsPicker = ref(false)
 const feedbackContactValue = ref('')
 const feedbackOrderId = ref('')
@@ -1539,13 +1576,6 @@ const progressTabs = ['全部', ...repairStatusFlow]
 const repairFlow = ['提交', '运输', '签收', '处理', '回寄', '完成']
 
 const packageFlow = ['待签收', '已签收', '已登记', '处理中', '已关联']
-
-const invoiceFlow = [
-	{ title: '待申请', desc: '选择已完成工单' },
-	{ title: '审核中', desc: '客服核对抬头与金额' },
-	{ title: '开票中', desc: '财务开具电子发票' },
-	{ title: '已开票', desc: '复制链接查看发票' }
-]
 
 const invoiceTitleTypes = [
 	{ value: 'company', label: '企业单位', desc: '适合诊所 / 医院' },
@@ -2004,6 +2034,7 @@ const normalizeOrder = (item = {}) => {
 	const paymentProofs = Array.isArray(merged.paymentProofs)
 		? merged.paymentProofs
 		: (Array.isArray(merged.payment_proofs) ? merged.payment_proofs : [])
+	const invoiceInfo = merged.invoice_info || merged.invoiceInfo || {}
 
 	return {
 		id: orderId,
@@ -2030,12 +2061,15 @@ const normalizeOrder = (item = {}) => {
 		price: merged.price || merged.amount || merged.totalFee || merged.total_fee || merged.total_price || (totalFee ? formatMoney(totalFee) : ''),
 		date: formatDateTime(createTime, 0, 10),
 		doneTime: merged.doneTime || merged.expectedDoneTime || '待后台同步',
-		invoiceStatus: merged.invoiceStatus || merged.invoice_status,
-		invoiced: merged.invoiced,
-		invoiceTitle: merged.invoiceTitle || merged.invoice_title,
-		invoiceNo: merged.invoiceNo || merged.invoice_no,
-		invoiceDate: merged.invoiceDate || merged.invoice_date,
-		invoiceUrl: merged.invoiceUrl || merged.invoice_url,
+		invoiceStatus: merged.invoiceStatus || merged.invoice_status || invoiceInfo.status,
+		invoiced: merged.invoiced || invoiceInfo.status === '已开具',
+		invoiceTitle: merged.invoiceTitle || merged.invoice_title || invoiceInfo.title,
+		taxNo: merged.taxNo || merged.tax_no || invoiceInfo.tax_no,
+		invoiceEmail: merged.invoiceEmail || merged.invoice_email || invoiceInfo.email,
+		invoiceRemark: merged.invoiceRemark || merged.invoice_remark || invoiceInfo.remark,
+		invoiceNo: merged.invoiceNo || merged.invoice_no || invoiceInfo.invoice_no,
+		invoiceDate: merged.invoiceDate || merged.invoice_date || formatDateTime(invoiceInfo.update_time || invoiceInfo.apply_time, 0, 10),
+		invoiceUrl: merged.invoiceUrl || merged.invoice_url || invoiceInfo.invoice_url,
 		quoteStatus: merged.quoteStatus || merged.quote_status || merged.quote?.status || (quoteItems.length ? 'issued' : 'pending'),
 		authorizationStatus: merged.authorizationStatus || merged.authorization_status || merged.authStatus || (localPatch.authorizationStatus || ''),
 		authorizationTime: merged.authorizationTime || merged.authorization_time || localPatch.authorizationTime || '',
@@ -2577,6 +2611,7 @@ const payRepairQuote = (order = {}) => {
 			let loadingShown = false
 			let paymentFinished = false
 			try {
+				await requestStatusSubscription('quote_confirm')
 				paymentSubmitting.value = true
 				uni.showLoading({ title: '创建支付' })
 				loadingShown = true
@@ -2636,6 +2671,7 @@ const uploadPaymentProof = async (order = {}) => {
 	if (!canUploadPaymentProof(order) || paymentProofUploading.value) return
 	let loadingShown = false
 	try {
+		await requestStatusSubscription('quote_confirm')
 		const chooseRes = await uni.chooseImage({
 			count: 1,
 			sizeType: ['compressed'],
@@ -2690,29 +2726,6 @@ const previewPaymentProof = (index = 0) => {
 		current: urls[index] || urls[0],
 		urls
 	})
-}
-
-function getInvoiceStatusKey(order = {}) {
-	if (order.invoiceStatus) return order.invoiceStatus
-	if (order.invoiced) return 'issued'
-	if (order.status === '已取消') return 'disabled'
-	if (order.statusGroup === '已完成' || ['已完成', '已评价'].includes(order.status)) return 'available'
-	return 'unavailable'
-}
-
-function getInvoiceMeta(order = {}) {
-	const status = getInvoiceStatusKey(order)
-	const metaMap = {
-		available: { label: '可申请', tone: 'ok', stage: '待申请', desc: '维修已完成，可申请电子普通发票。' },
-		processing: { label: '审核中', tone: 'warn', stage: '审核中', desc: '申请已提交，客服正在核对抬头、税号和维修金额。' },
-		reviewing: { label: '审核中', tone: 'warn', stage: '审核中', desc: '申请已提交，客服正在核对抬头、税号和维修金额。' },
-		approved: { label: '开票中', tone: 'info', stage: '开票中', desc: '开票资料已审核通过，等待财务开具电子发票。' },
-		issuing: { label: '开票中', tone: 'info', stage: '开票中', desc: '财务正在开具电子发票，完成后会同步链接。' },
-		issued: { label: '已开票', tone: 'ok', stage: '已开票', desc: '电子发票已开具，可复制链接查看。' },
-		unavailable: { label: '待完成', tone: 'muted', stage: '不可申请', desc: '维修完成并结算后即可申请开票。' },
-		disabled: { label: '不可开票', tone: 'muted', stage: '不可申请', desc: '该订单暂不支持开票。' }
-	}
-	return metaMap[status] || metaMap.unavailable
 }
 
 const resetInvoiceForm = (order = {}) => {
@@ -2774,7 +2787,7 @@ const submitInvoiceApply = async () => {
 
 	invoiceSubmitting.value = true
 	try {
-		await applyInvoice({
+		const invoiceResult = await applyInvoice({
 			orderId: order.id,
 			invoiceType: invoiceForm.value.invoiceType,
 			titleType: invoiceForm.value.titleType,
@@ -2785,11 +2798,11 @@ const submitInvoiceApply = async () => {
 		})
 
 		patchOrderRecord(order.id, {
-			invoiceStatus: 'processing',
-			invoiceType: invoiceForm.value.invoiceType,
-			invoiceTitle: invoiceForm.value.title.trim(),
-			taxNo: invoiceForm.value.titleType === 'company' ? invoiceForm.value.taxNo.trim() : '',
-			invoiceEmail: invoiceForm.value.email.trim()
+			invoiceStatus: invoiceResult.status || '待开票',
+			invoiceType: invoiceResult.invoice_type || invoiceResult.invoiceType || invoiceForm.value.invoiceType,
+			invoiceTitle: invoiceResult.title || invoiceForm.value.title.trim(),
+			taxNo: invoiceResult.tax_no || invoiceResult.taxNo || (invoiceForm.value.titleType === 'company' ? invoiceForm.value.taxNo.trim() : ''),
+			invoiceEmail: invoiceResult.email || invoiceForm.value.email.trim()
 		})
 		activeInvoiceOrderId.value = ''
 		activeInvoiceTab.value = '待开票'
@@ -2801,21 +2814,7 @@ const submitInvoiceApply = async () => {
 		})
 	} catch (error) {
 		console.warn('submit invoice failed:', error)
-		patchOrderRecord(order.id, {
-			invoiceStatus: 'processing',
-			invoiceType: invoiceForm.value.invoiceType,
-			invoiceTitle: invoiceForm.value.title.trim(),
-			taxNo: invoiceForm.value.titleType === 'company' ? invoiceForm.value.taxNo.trim() : '',
-			invoiceEmail: invoiceForm.value.email.trim()
-		})
-		activeInvoiceOrderId.value = ''
-		activeInvoiceTab.value = '待开票'
-		uni.showModal({
-			title: '已记录开票申请',
-			content: '当前开票接口暂未开放，前端已先保留申请记录；后台上线后可同步审核、开票状态和电子发票链接。',
-			showCancel: false,
-			confirmText: '知道了'
-		})
+		uni.showToast({ title: error.message || '开票申请提交失败', icon: 'none' })
 	} finally {
 		invoiceSubmitting.value = false
 	}
@@ -2932,6 +2931,7 @@ const closeModule = () => {
 }
 
 const openTrackDetail = (order) => {
+	requestStatusSubscription('track_view')
 	trackDetailOrder.value = order.id
 	openModule('order-detail')
 }
@@ -3263,6 +3263,7 @@ const submitRepair = async () => {
 	}
 	if (!validateRepairForm()) return
 
+	await requestStatusSubscription('repair_submit')
 	repairSubmitting.value = true
 	try {
 		const res = await submitRepairOrder(buildRepairPayload())
@@ -3279,7 +3280,7 @@ const submitRepair = async () => {
 			return
 		}
 		console.warn('submit repair failed:', error)
-		uni.showToast({ title: error.message || '报修接口暂未开放，已保留草稿', icon: 'none' })
+		uni.showToast({ title: error.message || '提交失败，已保留草稿', icon: 'none' })
 	} finally {
 		repairSubmitting.value = false
 	}
@@ -3623,6 +3624,7 @@ const go = (id, type) => {
 	}
 
 	if (moduleMap[id]) {
+		if (id === 'track') requestStatusSubscription('track_view')
 		openModule(id, type)
 		return
 	}

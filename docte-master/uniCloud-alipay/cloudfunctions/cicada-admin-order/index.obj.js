@@ -28,6 +28,138 @@ function normalizePage(page, pageSize) {
 }
 
 const ORDER_STATUS = ['pending', 'sent', 'received', 'inspecting', 'fixing', 'shipped', 'completed', 'cancelled']
+const SUBSCRIPTION_SCENE_LABELS = {
+  repair_submitted: '报修已提交',
+  order_received: '设备已签收',
+  quote_issued: '维修报价已发布',
+  payment_confirmed: '付款已确认',
+  order_shipped: '设备已回寄',
+  order_completed: '工单已完成'
+}
+const SUBSCRIPTION_CONFIG_SCENES = [
+  { scene: 'repair_submitted', title: '报修提交提醒' },
+  { scene: 'order_received', title: '设备签收提醒' },
+  { scene: 'quote_issued', title: '维修报价提醒' },
+  { scene: 'payment_confirmed', title: '付款到账提醒' },
+  { scene: 'order_shipped', title: '回寄发货提醒' },
+  { scene: 'order_completed', title: '工单完成提醒' }
+]
+let wechatAccessTokenCache = { token: '', expireAt: 0 }
+
+function getEnvValue(...names) {
+  for (const name of names) {
+    const value = process.env[name]
+    if (value) return String(value).trim()
+  }
+  return ''
+}
+
+function getSubscriptionTemplateId(scene = '') {
+  const key = String(scene || '').trim().toUpperCase()
+  return getEnvValue(`WX_SUBSCRIBE_TEMPLATE_${key}`, `WECHAT_SUBSCRIBE_TEMPLATE_${key}`)
+}
+
+function getWechatAppConfig() {
+  const appId = getEnvValue('WX_APPID', 'WECHAT_APPID')
+  const secret = getEnvValue('WX_SECRET', 'WECHAT_SECRET')
+  if (!appId || !secret) throw new Error('未配置 WX_APPID/WX_SECRET')
+  return { appId, secret }
+}
+
+async function getWechatAccessToken() {
+  if (wechatAccessTokenCache.token && Date.now() < wechatAccessTokenCache.expireAt) {
+    return wechatAccessTokenCache.token
+  }
+  const config = getWechatAppConfig()
+  const tokenUrl = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(config.appId)}&secret=${encodeURIComponent(config.secret)}`
+  const res = await uniCloud.httpclient.request(tokenUrl, {
+    method: 'GET',
+    dataType: 'json'
+  })
+  if (!res.data || !res.data.access_token) {
+    throw new Error(res.data && res.data.errmsg ? res.data.errmsg : '获取微信access_token失败')
+  }
+  wechatAccessTokenCache = {
+    token: res.data.access_token,
+    expireAt: Date.now() + Math.max(Number(res.data.expires_in || 7200) - 300, 60) * 1000
+  }
+  return wechatAccessTokenCache.token
+}
+
+async function sendWechatSubscribeMessage(payload = {}) {
+  const accessToken = await getWechatAccessToken()
+  const res = await uniCloud.httpclient.request(`https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${encodeURIComponent(accessToken)}`, {
+    method: 'POST',
+    dataType: 'json',
+    data: JSON.stringify(payload),
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  const data = res.data || {}
+  if (data.errcode && data.errcode !== 0) {
+    throw new Error(data.errmsg || `订阅消息发送失败(${data.errcode})`)
+  }
+  return data
+}
+
+function formatNotifyTime(value = Date.now()) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = n => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function buildSubscriptionData(order = {}, scene = '', remark = '') {
+  const sceneLabel = SUBSCRIPTION_SCENE_LABELS[scene] || '工单状态更新'
+  return {
+    thing1: { value: sceneLabel.slice(0, 20) },
+    character_string2: { value: String(order.order_no || order._id || '').slice(0, 32) },
+    phrase3: { value: sceneLabel.slice(0, 10) },
+    time4: { value: formatNotifyTime() },
+    thing5: { value: String(remark || sceneLabel).slice(0, 20) }
+  }
+}
+
+async function logSubscriptionMessage(payload = {}) {
+  await db.collection('cicada_subscription_logs').add({
+    ...payload,
+    create_time: Date.now()
+  }).catch(() => {})
+}
+
+async function sendOrderSubscription(order = {}, scene = '', remark = '') {
+  const templateId = getSubscriptionTemplateId(scene)
+  const logBase = {
+    order_id: order._id || '',
+    order_no: order.order_no || '',
+    user_id: order.user_id || '',
+    scene,
+    template_id: templateId,
+    status: 'pending'
+  }
+  if (!templateId) {
+    await logSubscriptionMessage({ ...logBase, status: 'skipped', fail_reason: '未配置订阅消息模板ID' })
+    return
+  }
+  try {
+    const userRes = await db.collection('cicada_users').doc(order.user_id).get()
+    const user = userRes.data && userRes.data[0]
+    if (!user || !user.openid) {
+      await logSubscriptionMessage({ ...logBase, status: 'skipped', fail_reason: '用户缺少openid' })
+      return
+    }
+    await sendWechatSubscribeMessage({
+      touser: user.openid,
+      template_id: templateId,
+      page: `pages/index/index?module=track&orderId=${encodeURIComponent(order.order_no || order._id || '')}`,
+      data: buildSubscriptionData(order, scene, remark)
+    })
+    await logSubscriptionMessage({ ...logBase, openid: user.openid, status: 'sent' })
+  } catch (e) {
+    await logSubscriptionMessage({ ...logBase, status: 'failed', fail_reason: e.message || String(e) })
+  }
+}
 
 function parseHttpBody(ctx) {
   const httpInfo = ctx.getHttpInfo && ctx.getHttpInfo()
@@ -42,6 +174,34 @@ function pickParam(ctx, params) {
 
 function normalizeText(value) {
   return String(value === undefined || value === null ? '' : value).trim()
+}
+
+function normalizeInvoiceStatusFilter(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  const map = {
+    未发票: '待开票',
+    已发票: '已开具'
+  }
+  return map[text] || text
+}
+
+function matchesTodoType(order = {}, todoType = '') {
+  const type = normalizeText(todoType)
+  if (!type) return true
+  const status = order.status || ''
+  const invoiceInfo = order.invoice_info || {}
+  const quoteStatus = order.quote_status || 'pending'
+  const paymentStatus = order.payment_status || 'pending'
+  const totalPrice = Number(order.total_price || 0)
+
+  if (type === 'inbound') return ['pending', 'sent'].includes(status)
+  if (type === 'quote') return ['received', 'inspecting', 'fixing'].includes(status) && !['issued', 'confirmed'].includes(quoteStatus)
+  if (type === 'payment') return totalPrice > 0 && paymentStatus === 'uploaded'
+  if (type === 'invoice') return Boolean(invoiceInfo.need_invoice) && ['待开票', '开具中', '未发票'].includes(invoiceInfo.status || '待开票')
+  if (type === 'return') return ['fixing', 'inspecting'].includes(status) && paymentStatus === 'paid'
+  if (type === 'exception') return status !== 'cancelled' && Boolean(order.admin_exception || order.exception_reason)
+  return true
 }
 
 function normalizeImportRows(rows) {
@@ -203,6 +363,15 @@ const INVOICE_STATUS = ['无需开票', '待开票', '开具中', '已开具']
 const QUOTE_STATUS = ['pending', 'draft', 'issued', 'confirmed', 'rejected']
 const PAYMENT_STATUS = ['pending', 'uploaded', 'paid']
 
+function normalizeInvoiceStatusValue(status = '') {
+  const value = normalizeText(status)
+  const map = {
+    未发票: '待开票',
+    已发票: '已开具'
+  }
+  return map[value] || value
+}
+
 function normalizeQuoteItems(items) {
   if (!Array.isArray(items)) return []
   return items.map((item = {}) => {
@@ -291,8 +460,42 @@ async function enrichPaymentProofs(order = {}) {
   }
 }
 
+async function fetchOrderBatches(matchCond = {}, { withItems = false } = {}) {
+  const batchSize = 500
+  const orders = []
+  let offset = 0
+
+  while (true) {
+    let query = db.collection('cicada_orders')
+      .aggregate()
+      .match(matchCond)
+      .sort({ create_time: -1 })
+      .skip(offset)
+      .limit(batchSize)
+
+    if (withItems) {
+      query = query.lookup({
+        from: 'cicada_order_items',
+        localField: '_id',
+        foreignField: 'order_id',
+        as: 'itemsList'
+      })
+    }
+
+    const res = await query.end()
+    const batch = res.data || []
+    orders.push(...batch)
+    if (batch.length < batchSize) break
+    offset += batchSize
+  }
+
+  return orders
+}
+
 module.exports = {
   async _before() {
+    if (this.getMethodName && this.getMethodName() === 'getSubscriptionConfig') return
+
     // 从 HTTP 请求或普通调用中获取 token
     let token
     const httpInfo = this.getHttpInfo && this.getHttpInfo()
@@ -309,40 +512,31 @@ module.exports = {
   // 获取后台工单列表（支持筛选/分页）
   async getAdminOrderList(params) {
     try {
-      let status, page = 1, pageSize = 20
-      if (params && params.status !== undefined) {
-        ({ status, page = 1, pageSize = 20 } = params)
+      let status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array'
+      if (params && Object.keys(params).length) {
+        ({ status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array' } = params)
       } else {
         const httpInfo = this.getHttpInfo && this.getHttpInfo()
         if (httpInfo && httpInfo.body) {
           const body = JSON.parse(httpInfo.body)
-          ;({ status, page = 1, pageSize = 20 } = body)
+          ;({ status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array' } = body)
         }
       }
       if (status && !ORDER_STATUS.includes(status)) return { code: -1, msg: '工单状态不正确' }
       const pagination = normalizePage(page, pageSize)
+      const normalizedKeyword = normalizeText(keyword).toLowerCase()
+      const normalizedDeviceModel = normalizeText(deviceModel)
+      const normalizedInvoiceStatus = normalizeInvoiceStatusFilter(invoiceStatus)
 
       // 构建匹配条件
       const matchCond = {}
       if (status) matchCond.status = status
 
-      // 使用聚合查询联表获取工单项目
-      const res = await db.collection('cicada_orders')
-        .aggregate()
-        .match(matchCond)
-        .sort({ create_time: -1 })
-        .skip((pagination.page - 1) * pagination.pageSize)
-        .limit(pagination.pageSize)
-        .lookup({
-          from: 'cicada_order_items',
-          localField: '_id',
-          foreignField: 'order_id',
-          as: 'itemsList'
-        })
-        .end()
+      // 使用聚合查询联表获取工单项目；筛选和分页在云函数侧完成，避免前端固定只取前100条。
+      const rawOrders = await fetchOrderBatches(matchCond, { withItems: true })
 
       // 处理返回数据，提取第一项的字段到外层
-      const orders = await Promise.all(res.data.map(async order => {
+      const orders = await Promise.all(rawOrders.map(async order => {
         // 提取 lookup 关联到的第一条详情数据
         const itemDetail = (order.itemsList && order.itemsList.length > 0) ? order.itemsList[0] : {}
         const orderWithProofs = await enrichPaymentProofs(order)
@@ -362,7 +556,48 @@ module.exports = {
         }
       }))
 
-      return { code: 0, data: orders }
+      const filteredOrders = orders.filter(order => {
+        const items = Array.isArray(order.itemsList) ? order.itemsList : []
+        const productModels = items.map(item => normalizeText(item.product_model)).filter(Boolean)
+        const productSns = items.map(item => normalizeText(item.sn)).filter(Boolean)
+        const invoiceInfo = order.invoice_info || {}
+        const orderInvoiceStatus = normalizeInvoiceStatusFilter(invoiceInfo.status || (invoiceInfo.need_invoice ? '待开票' : '无需开票'))
+        const searchableText = [
+          order.order_no,
+          order._id,
+          order.user_id,
+          order.product_name,
+          order.product_model,
+          order.fault_desc,
+          order.ship_back_info && order.ship_back_info.name,
+          order.ship_back_info && order.ship_back_info.phone,
+          order.ship_back_info && order.ship_back_info.unit,
+          order.ship_out_info && order.ship_out_info.logistics_no,
+          order.ship_back_info && order.ship_back_info.logistics_no,
+          ...productModels,
+          ...productSns
+        ].filter(Boolean).join(' ').toLowerCase()
+
+        return matchesTodoType(order, todoType) &&
+          (!normalizedKeyword || searchableText.includes(normalizedKeyword)) &&
+          (!normalizedDeviceModel || productModels.includes(normalizedDeviceModel)) &&
+          (!normalizedInvoiceStatus || orderInvoiceStatus === normalizedInvoiceStatus)
+      })
+
+      const total = filteredOrders.length
+      const start = (pagination.page - 1) * pagination.pageSize
+      const list = filteredOrders.slice(start, start + pagination.pageSize)
+      const deviceModels = [...new Set(filteredOrders
+        .flatMap(order => (order.itemsList || []).map(item => normalizeText(item.product_model)))
+        .filter(Boolean))]
+        .sort()
+
+      return {
+        code: 0,
+        data: responseMode === 'page'
+          ? { list, total, page: pagination.page, pageSize: pagination.pageSize, deviceModels }
+          : list
+      }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
@@ -462,11 +697,22 @@ module.exports = {
       }
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
       if (!ORDER_STATUS.includes(status)) return { code: -1, msg: '工单状态不正确' }
+      const found = await db.collection('cicada_orders').doc(order_id).get()
+      const order = found.data && found.data[0]
+      if (!order) return { code: -1, msg: '工单不存在' }
       const res = await db.collection('cicada_orders').doc(order_id).update({
         status,
         update_time: Date.now()
       })
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      const sceneMap = {
+        received: 'order_received',
+        shipped: 'order_shipped',
+        completed: 'order_completed'
+      }
+      if (sceneMap[status] && order.status !== status) {
+        await sendOrderSubscription({ ...order, status }, sceneMap[status])
+      }
       return { code: 0 }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -543,6 +789,8 @@ module.exports = {
           continue
         }
 
+        const notifyScene = importType === 'inbound' ? 'order_received' : 'order_shipped'
+        await sendOrderSubscription({ ...order, ...updateData }, notifyScene, updateData.status === 'received' ? '设备已签收' : '设备已回寄')
         summary.success += 1
       }
 
@@ -594,6 +842,10 @@ module.exports = {
           results.push({ ...item, success: false, reason: '工单不存在' })
           continue
         }
+        if (order.status === 'cancelled') {
+          results.push({ ...item, success: false, reason: '已取消工单不能导入修改' })
+          continue
+        }
 
         const shipBackInfo = buildShipBackInfo(order, item, now)
         const timeline = Array.isArray(order.timeline) ? order.timeline : []
@@ -619,6 +871,7 @@ module.exports = {
           continue
         }
 
+        await sendOrderSubscription({ ...order, ...updateData }, 'order_shipped', '设备已回寄')
         results.push({
           ...item,
           order_id: order._id,
@@ -690,6 +943,11 @@ module.exports = {
           summary.errors.push({ orderNo: item.orderNo, reason: '工单不存在' })
           continue
         }
+        if (order.status === 'cancelled') {
+          summary.fail += 1
+          summary.errors.push({ orderNo: item.orderNo, reason: '已取消工单不能导入修改' })
+          continue
+        }
 
         const timeline = Array.isArray(order.timeline) ? order.timeline : []
         const updateData = {
@@ -714,6 +972,7 @@ module.exports = {
           continue
         }
 
+        await sendOrderSubscription({ ...order, ...updateData }, 'order_shipped', '设备已回寄')
         summary.success += 1
       }
 
@@ -750,16 +1009,22 @@ module.exports = {
   async updateInvoiceStatus(params) {
     try {
       const { order_id, status, invoice = {} } = pickParam(this, params)
+      const nextStatus = normalizeInvoiceStatusValue(status)
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
-      if (!INVOICE_STATUS.includes(status)) return { code: -1, msg: '发票状态不正确' }
+      if (!INVOICE_STATUS.includes(nextStatus)) return { code: -1, msg: '发票状态不正确' }
 
       const now = Date.now()
+      const found = await db.collection('cicada_orders').doc(order_id).get()
+      const order = found.data && found.data[0]
+      if (!order) return { code: -1, msg: '工单不存在' }
+      const oldInvoice = order.invoice_info || {}
       const invoiceInfo = {
-        need_invoice: status !== '无需开票',
-        status,
-        title: normalizeText(invoice.title),
-        tax_no: normalizeText(invoice.tax_no || invoice.taxNo),
-        remark: normalizeText(invoice.remark),
+        ...oldInvoice,
+        need_invoice: nextStatus !== '无需开票',
+        status: nextStatus,
+        title: normalizeText(invoice.title) || oldInvoice.title || '',
+        tax_no: normalizeText(invoice.tax_no || invoice.taxNo) || oldInvoice.tax_no || '',
+        remark: normalizeText(invoice.remark) || oldInvoice.remark || '',
         update_time: now
       }
 
@@ -767,7 +1032,7 @@ module.exports = {
         invoice_info: invoiceInfo,
         update_time: now
       })
-      if (!res.updated) return { code: -1, msg: '工单不存在' }
+      if (!res.updated) return { code: -1, msg: '工单更新失败' }
 
       return { code: 0, data: invoiceInfo }
     } catch (e) {
@@ -811,6 +1076,9 @@ module.exports = {
       const res = await db.collection('cicada_orders').doc(order_id).update(updateData)
       if (!res.updated) return { code: -1, msg: '工单不存在' }
 
+      if (quoteData.quote_status === 'issued' && order.quote_status !== 'issued') {
+        await sendOrderSubscription({ ...order, ...updateData }, 'quote_issued', '维修报价已发布')
+      }
       return { code: 0, data: updateData }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -856,6 +1124,9 @@ module.exports = {
       const res = await db.collection('cicada_orders').doc(order_id).update(updateData)
       if (!res.updated) return { code: -1, msg: '工单不存在' }
 
+      if (paymentStatus === 'paid' && order.payment_status !== 'paid') {
+        await sendOrderSubscription({ ...order, ...updateData }, 'payment_confirmed', '付款已确认')
+      }
       return { code: 0, data: updateData }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -895,7 +1166,7 @@ module.exports = {
 
       const [pendingRes, todayRes] = await Promise.all([
         db.collection('cicada_orders').where({
-          status: dbCmd.in(['pending', 'received'])
+          status: dbCmd.in(['pending', 'sent', 'received'])
         }).count(),
         db.collection('cicada_orders').where({ create_time: dbCmd.gte(todayStart) }).count()
       ])
@@ -907,6 +1178,42 @@ module.exports = {
           todayCount: todayRes.total
         }
       }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 获取后台待办中心分组统计
+  async getTodoSummary(params) {
+    try {
+      const orders = await fetchOrderBatches({ status: dbCmd.neq('cancelled') })
+      const groups = [
+        { key: 'inbound', title: '待签收', desc: '客户已提交或运输中的工单', count: 0 },
+        { key: 'quote', title: '待报价', desc: '已签收/处理中但未发布报价', count: 0 },
+        { key: 'payment', title: '待核销', desc: '客户已上传付款凭证', count: 0 },
+        { key: 'invoice', title: '待开票', desc: '客户已提交发票申请', count: 0 },
+        { key: 'return', title: '待回寄', desc: '已付款但尚未回寄', count: 0 },
+        { key: 'exception', title: '异常工单', desc: '需要人工介入处理', count: 0 }
+      ]
+
+      groups.forEach(group => {
+        group.count = orders.filter(order => matchesTodoType(order, group.key)).length
+      })
+
+      return { code: 0, data: { groups } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 供 URL 健康检查确认订阅模板配置通道可达，不暴露模板 ID 明文
+  async getSubscriptionConfig(params) {
+    try {
+      const templates = SUBSCRIPTION_CONFIG_SCENES.map(item => ({
+        ...item,
+        configured: Boolean(getSubscriptionTemplateId(item.scene))
+      }))
+      return { code: 0, data: { templates } }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
@@ -928,7 +1235,7 @@ module.exports = {
       ] = await Promise.all([
         db.collection('cicada_orders').count(),
         db.collection('cicada_orders').where({ status: 'completed' }).count(),
-        db.collection('cicada_orders').where({ status: dbCmd.in(['pending', 'received']) }).count(),
+        db.collection('cicada_orders').where({ status: dbCmd.in(['pending', 'sent', 'received']) }).count(),
         db.collection('cicada_orders').where({ create_time: dbCmd.gte(monthStart) }).count(),
         db.collection('cicada_feedbacks').count(),
         db.collection('cicada_feedbacks').where({ status: '待处理' }).count()
