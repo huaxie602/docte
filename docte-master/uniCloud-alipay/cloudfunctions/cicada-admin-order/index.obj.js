@@ -492,6 +492,157 @@ async function fetchOrderBatches(matchCond = {}, { withItems = false } = {}) {
   return orders
 }
 
+function padDatePart(value) {
+  return String(value).padStart(2, '0')
+}
+
+function formatDateKey(date) {
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`
+}
+
+function parseDateStart(value, fallback) {
+  if (!value) return fallback
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? fallback : date.getTime()
+}
+
+function parseDateEnd(value, fallback) {
+  if (!value) return fallback
+  const date = new Date(`${String(value).slice(0, 10)}T23:59:59.999`)
+  return Number.isNaN(date.getTime()) ? fallback : date.getTime()
+}
+
+function normalizeDashboardRange(startDate = '', endDate = '') {
+  const now = new Date()
+  const defaultEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime()
+  const defaultStartDate = new Date(now)
+  defaultStartDate.setDate(now.getDate() - 6)
+  defaultStartDate.setHours(0, 0, 0, 0)
+
+  let startTime = parseDateStart(startDate, defaultStartDate.getTime())
+  let endTime = parseDateEnd(endDate, defaultEnd)
+  if (startTime > endTime) {
+    const temp = startTime
+    startTime = endTime
+    endTime = temp
+  }
+  return { startTime, endTime }
+}
+
+function isInRange(value, startTime, endTime) {
+  const time = Number(value || 0)
+  return time >= startTime && time <= endTime
+}
+
+function getWeekStart(date) {
+  const next = new Date(date)
+  const day = next.getDay() || 7
+  next.setDate(next.getDate() - day + 1)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function getTrendKey(time, granularity = 'day') {
+  const date = new Date(Number(time || 0))
+  if (Number.isNaN(date.getTime())) return ''
+  if (granularity === 'week') return formatDateKey(getWeekStart(date))
+  return formatDateKey(date)
+}
+
+function buildTrendBuckets(startTime, endTime, granularity = 'day') {
+  const buckets = []
+  const cursor = granularity === 'week' ? getWeekStart(new Date(startTime)) : new Date(startTime)
+  cursor.setHours(0, 0, 0, 0)
+
+  while (cursor.getTime() <= endTime) {
+    const key = formatDateKey(cursor)
+    buckets.push({
+      key,
+      label: granularity === 'week' ? `${key} 周` : key,
+      newOrders: 0,
+      completedOrders: 0,
+      pendingOrders: 0
+    })
+    cursor.setDate(cursor.getDate() + (granularity === 'week' ? 7 : 1))
+  }
+
+  return buckets
+}
+
+function getOrderCompletedTime(order = {}) {
+  return Number(order.completed_time || order.complete_time || order.update_time || order.create_time || 0)
+}
+
+function getDashboardMetrics(orders = [], feedbacks = [], startTime, endTime, granularity = 'day') {
+  const pendingStatuses = ['pending', 'sent', 'received']
+  const repairingStatuses = ['inspecting', 'fixing']
+  const trend = buildTrendBuckets(startTime, endTime, granularity)
+  const trendMap = trend.reduce((map, item) => {
+    map[item.key] = item
+    return map
+  }, {})
+  const completedDurations = []
+
+  const metrics = {
+    newOrders: 0,
+    pendingOrders: 0,
+    repairingOrders: 0,
+    completedOrders: 0,
+    avgHandleHours: 0,
+    quotePendingOrders: 0,
+    invoicePendingOrders: 0,
+    totalOrders: 0,
+    totalFeedbacks: 0,
+    pendingFeedbacks: 0
+  }
+
+  orders.forEach(order => {
+    if (order.status !== 'cancelled') metrics.totalOrders += 1
+    const createTime = Number(order.create_time || 0)
+    const completedTime = getOrderCompletedTime(order)
+    const createKey = getTrendKey(createTime, granularity)
+    const completedKey = getTrendKey(completedTime, granularity)
+
+    if (isInRange(createTime, startTime, endTime)) {
+      metrics.newOrders += 1
+      if (trendMap[createKey]) trendMap[createKey].newOrders += 1
+    }
+
+    if (pendingStatuses.includes(order.status)) {
+      metrics.pendingOrders += 1
+      if (isInRange(createTime, startTime, endTime) && trendMap[createKey]) {
+        trendMap[createKey].pendingOrders += 1
+      }
+    }
+
+    if (repairingStatuses.includes(order.status)) metrics.repairingOrders += 1
+    if (matchesTodoType(order, 'quote')) metrics.quotePendingOrders += 1
+    if (matchesTodoType(order, 'invoice')) metrics.invoicePendingOrders += 1
+
+    if (order.status === 'completed' && isInRange(completedTime, startTime, endTime)) {
+      metrics.completedOrders += 1
+      if (trendMap[completedKey]) trendMap[completedKey].completedOrders += 1
+      if (createTime && completedTime >= createTime) {
+        completedDurations.push((completedTime - createTime) / 3600000)
+      }
+    }
+  })
+
+  feedbacks.forEach(item => {
+    const createTime = Number(item.create_time || item.submit_time || item.update_time || 0)
+    if (isInRange(createTime, startTime, endTime)) {
+      metrics.totalFeedbacks += 1
+      if (['待处理', '未读', '处理中'].includes(item.status)) metrics.pendingFeedbacks += 1
+    }
+  })
+
+  if (completedDurations.length) {
+    metrics.avgHandleHours = Number((completedDurations.reduce((sum, value) => sum + value, 0) / completedDurations.length).toFixed(1))
+  }
+
+  return { metrics, trend }
+}
+
 module.exports = {
   async _before() {
     if (this.getMethodName && this.getMethodName() === 'getSubscriptionConfig') return
@@ -1222,34 +1373,29 @@ module.exports = {
   // 获取服务数据总结
   async getDashboardSummary(params) {
     try {
-      const now = new Date()
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
-
-      const [
-        totalOrdersRes,
-        completedOrdersRes,
-        pendingOrdersRes,
-        monthOrdersRes,
-        totalFeedbacksRes,
-        pendingFeedbacksRes
-      ] = await Promise.all([
-        db.collection('cicada_orders').count(),
-        db.collection('cicada_orders').where({ status: 'completed' }).count(),
-        db.collection('cicada_orders').where({ status: dbCmd.in(['pending', 'sent', 'received']) }).count(),
-        db.collection('cicada_orders').where({ create_time: dbCmd.gte(monthStart) }).count(),
-        db.collection('cicada_feedbacks').count(),
-        db.collection('cicada_feedbacks').where({ status: '待处理' }).count()
+      const { startDate = '', endDate = '', granularity = 'day' } = pickParam(this, params)
+      const { startTime, endTime } = normalizeDashboardRange(startDate, endDate)
+      const normalizedGranularity = granularity === 'week' ? 'week' : 'day'
+      const [orders, feedbackRes] = await Promise.all([
+        fetchOrderBatches({ status: dbCmd.neq('cancelled') }),
+        db.collection('cicada_feedbacks').where({
+          create_time: dbCmd.and(dbCmd.gte(startTime), dbCmd.lte(endTime))
+        }).get()
       ])
+      const { metrics, trend } = getDashboardMetrics(orders, feedbackRes.data || [], startTime, endTime, normalizedGranularity)
 
       return {
         code: 0,
         data: {
-          totalOrders: totalOrdersRes.total || 0,
-          completedOrders: completedOrdersRes.total || 0,
-          pendingOrders: pendingOrdersRes.total || 0,
-          monthOrders: monthOrdersRes.total || 0,
-          totalFeedbacks: totalFeedbacksRes.total || 0,
-          pendingFeedbacks: pendingFeedbacksRes.total || 0
+          metrics,
+          trend,
+          range: { startTime, endTime, granularity: normalizedGranularity },
+          totalOrders: metrics.totalOrders,
+          completedOrders: metrics.completedOrders,
+          pendingOrders: metrics.pendingOrders,
+          monthOrders: metrics.newOrders,
+          totalFeedbacks: metrics.totalFeedbacks,
+          pendingFeedbacks: metrics.pendingFeedbacks
         }
       }
     } catch (e) {

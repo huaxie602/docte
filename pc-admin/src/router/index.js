@@ -8,6 +8,7 @@ import Users from '../views/Users.vue'
 import Feedback from '../views/Feedback.vue'
 import Settings from '../views/Settings.vue'
 import Summary from '../views/Summary.vue'
+import { clearAdminSession } from '../utils/adminSession.js'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -31,11 +32,17 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  if (to.name !== 'Login' && !localStorage.getItem('adminToken')) {
-    next({ name: 'Login' })
-  } else {
+  const token = localStorage.getItem('adminToken')
+  if (to.name === 'Login') {
     next()
+    return
   }
+  if (!token) {
+    clearAdminSession()
+    next({ name: 'Login', query: { redirect: to.fullPath } })
+    return
+  }
+  next()
 })
 
 export default router

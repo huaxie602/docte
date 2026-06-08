@@ -19,7 +19,7 @@ function setCache(key, data, ttl = CACHE_TTL) {
 const GUIDE_CATEGORY_ALIASES = {
   quick: ['快速指南', '快速入门'],
   repair: ['报修指南', '报修流程'],
-  query: ['查询办法', '维修查询', '物流寄送'],
+  query: ['查询指南', '查询办法', '维修查询', '物流寄送'],
   invoice: ['开票指南', '发票开具'],
   fault: ['自查指南', '故障自查']
 }
@@ -49,7 +49,7 @@ function getSubscriptionTemplateId(scene = '') {
 function normalizeGuide(item = {}, type = '') {
   return {
     id: item._id,
-    type,
+    type: item.type || type,
     title: item.category || '操作指南',
     description: item.desc || '',
     summary: item.desc || '',
@@ -60,6 +60,7 @@ function normalizeGuide(item = {}, type = '') {
     }],
     fileName: item.file_name || '',
     fileUrl: item.file_url || '',
+    fileType: item.file_type || '',
     updateTime: item.update_time || ''
   }
 }
@@ -171,7 +172,10 @@ module.exports = {
 
       const aliases = GUIDE_CATEGORY_ALIASES[guideType] || [guideType]
       const res = await db.collection('cicada_guides').orderBy('sort', 'asc').get()
-      const matched = res.data.find(item => aliases.some(alias => item.category && item.category.includes(alias)))
+      const matched = res.data.find(item =>
+        item.type === guideType ||
+        aliases.some(alias => item.category && item.category.includes(alias))
+      )
 
       if (!matched) return { code: 0, data: null }
 

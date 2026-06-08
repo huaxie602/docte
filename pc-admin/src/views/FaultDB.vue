@@ -5,12 +5,15 @@
         产品分类
         <el-button type="primary" link @click="openCatDialog(null)"><el-icon><Plus /></el-icon></el-button>
       </div>
-      <div v-for="cat in categories" :key="cat._id"
-           class="cat-item"
-           :class="{ active: currentCategory && currentCategory._id === cat._id }"
-           @click="currentCategory = cat">
-        <span>{{cat.name}}</span>
-        <span style="display:flex; gap:6px;">
+      <div
+        v-for="cat in categories"
+        :key="cat._id"
+        class="cat-item"
+        :class="{ active: currentCategory && currentCategory._id === cat._id }"
+        @click="currentCategory = cat"
+      >
+        <span>{{ cat.name }}</span>
+        <span class="cat-actions">
           <el-button type="primary" link size="small" @click.stop="openCatDialog(cat)">编辑</el-button>
           <el-button type="danger" link size="small" @click.stop="deleteCategoryHandler(cat)">删除</el-button>
         </span>
@@ -21,16 +24,16 @@
       <el-empty v-if="!currentCategory" description="请选择产品分类"></el-empty>
       <template v-else>
         <div class="section-title">
-          【{{currentCategory.name}}】故障库
+          「{{ currentCategory.name }}」故障库
           <el-button type="primary" @click="openFaultDialog(null)" size="small"><el-icon><Plus /></el-icon> 录入</el-button>
         </div>
         <div class="table-responsive">
-          <el-table :data="currentFaultItems" class="modern-table" style="width:100%;">
+          <el-table :data="currentFaultItems" class="modern-table" style="width:100%;" v-loading="loading">
             <el-table-column prop="name" label="故障现象" width="150"></el-table-column>
             <el-table-column prop="desc" label="相关问题" show-overflow-tooltip></el-table-column>
             <el-table-column prop="checkSteps" label="确认方式" show-overflow-tooltip></el-table-column>
             <el-table-column prop="solution" label="处理方式" show-overflow-tooltip></el-table-column>
-            <el-table-column prop="createdAt" label="创建时间" width="150"></el-table-column>
+            <el-table-column prop="createdAt" label="创建时间" width="160"></el-table-column>
             <el-table-column label="操作" width="130" align="right">
               <template #default="{row}">
                 <el-button type="primary" link @click="openFaultDialog(row)">编辑</el-button>
@@ -45,9 +48,7 @@
 
   <el-dialog v-model="catDialogVisible" :title="isEdit ? '编辑分类' : '新增分类'" width="420px" align-center>
     <el-form :model="catForm" label-width="90px">
-      <el-form-item label="分类名称">
-        <el-input v-model="catForm.name" placeholder="请输入分类名称"></el-input>
-      </el-form-item>
+      <el-form-item label="分类名称"><el-input v-model.trim="catForm.name" placeholder="请输入分类名称"></el-input></el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="catDialogVisible = false">取消</el-button>
@@ -55,20 +56,12 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="faultDialogVisible" :title="isEdit ? '编辑故障' : '新增故障'" width="520px" align-center>
+  <el-dialog v-model="faultDialogVisible" :title="isEdit ? '编辑故障' : '新增故障'" width="560px" align-center>
     <el-form :model="faultForm" label-width="90px">
-      <el-form-item label="故障现象">
-        <el-input v-model="faultForm.name" placeholder="请输入故障现象"></el-input>
-      </el-form-item>
-      <el-form-item label="相关问题">
-        <el-input v-model="faultForm.desc" type="textarea" :rows="3" placeholder="请输入客户常见描述，多个内容用分号隔开"></el-input>
-      </el-form-item>
-      <el-form-item label="确认方式">
-        <el-input v-model="faultForm.checkSteps" type="textarea" :rows="3" placeholder="请输入排查或确认步骤，多个内容用分号隔开"></el-input>
-      </el-form-item>
-      <el-form-item label="处理方式">
-        <el-input v-model="faultForm.solution" type="textarea" :rows="4" placeholder="请输入处理方式，多个内容用分号隔开"></el-input>
-      </el-form-item>
+      <el-form-item label="故障现象"><el-input v-model.trim="faultForm.name" placeholder="请输入故障现象"></el-input></el-form-item>
+      <el-form-item label="相关问题"><el-input v-model="faultForm.desc" type="textarea" :rows="3" placeholder="多个内容可用分号或换行分隔"></el-input></el-form-item>
+      <el-form-item label="确认方式"><el-input v-model="faultForm.checkSteps" type="textarea" :rows="3" placeholder="请输入排查或确认步骤"></el-input></el-form-item>
+      <el-form-item label="处理方式"><el-input v-model="faultForm.solution" type="textarea" :rows="4" placeholder="请输入处理方式"></el-input></el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="faultDialogVisible = false">取消</el-button>
@@ -86,30 +79,32 @@ const loading = ref(false)
 const categories = ref([])
 const allFaultItems = ref([])
 const currentCategory = ref(null)
+const isEdit = ref(false)
+const catDialogVisible = ref(false)
+const faultDialogVisible = ref(false)
+const catForm = reactive({ _id: null, name: '' })
+const faultForm = reactive({ _id: null, name: '', desc: '', checkSteps: '', solution: '' })
 
-// 加载分类列表
+const currentFaultItems = computed(() =>
+  currentCategory.value ? allFaultItems.value.filter(f => f.catId === currentCategory.value._id) : []
+)
+
+const splitTextList = (value) => String(value || '').split(/\n|\uFF1B|;/).map(item => item.trim()).filter(Boolean)
+
 const loadCategories = async () => {
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
     const data = await getCategoryList(token)
-    categories.value = data.map(c => ({
-      _id: c._id,
-      name: c.category_name,
-      status: c.status,
-      sort: c.sort
-    }))
-    if (categories.value.length > 0 && !currentCategory.value) {
-      currentCategory.value = categories.value[0]
-    }
+    categories.value = data.map(c => ({ _id: c._id, name: c.category_name, status: c.status, sort: c.sort }))
+    if (categories.value.length > 0 && !currentCategory.value) currentCategory.value = categories.value[0]
   } catch (error) {
-    ElMessage.error('加载分类失败')
+    ElMessage.error(error.message || '加载分类失败')
   } finally {
     loading.value = false
   }
 }
 
-// 加载故障列表
 const loadFaults = async () => {
   loading.value = true
   try {
@@ -125,34 +120,21 @@ const loadFaults = async () => {
       createdAt: f.create_time ? new Date(f.create_time).toLocaleString() : ''
     }))
   } catch (error) {
-    ElMessage.error('加载故障库失败')
+    ElMessage.error(error.message || '加载故障库失败')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
-  loadCategories()
-  loadFaults()
-})
-
-const currentFaultItems = computed(() =>
-  currentCategory.value ? allFaultItems.value.filter(f => f.catId === currentCategory.value._id) : []
-)
-
-const isEdit = ref(false)
-const catDialogVisible = ref(false)
-const catForm = reactive({ _id: null, name: '' })
-
 const openCatDialog = (cat) => {
-  isEdit.value = !!cat
+  isEdit.value = Boolean(cat)
   catForm._id = cat ? cat._id : null
   catForm.name = cat ? cat.name : ''
   catDialogVisible.value = true
 }
 
 const saveCategory = async () => {
-  if (!catForm.name.trim()) { ElMessage.warning('请输入分类名称'); return }
+  if (!catForm.name) { ElMessage.warning('请输入分类名称'); return }
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
@@ -174,29 +156,29 @@ const saveCategory = async () => {
 }
 
 const deleteCategoryHandler = (cat) => {
-  ElMessageBox.confirm(`确定删除分类"${cat.name}"吗？`, '删除确认', {
-    confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning'
+  ElMessageBox.confirm(`确定删除分类“${cat.name}”吗？`, '删除确认', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
   }).then(async () => {
     loading.value = true
     try {
       const token = localStorage.getItem('adminToken')
       await deleteCategory(token, cat._id)
       ElMessage.success('分类已删除')
+      currentCategory.value = null
       await loadCategories()
       await loadFaults()
     } catch (error) {
-      ElMessage.error('删除失败')
+      ElMessage.error(error.message || '删除失败')
     } finally {
       loading.value = false
     }
   }).catch(() => {})
 }
 
-const faultDialogVisible = ref(false)
-const faultForm = reactive({ _id: null, name: '', desc: '', checkSteps: '', solution: '' })
-
 const openFaultDialog = (fault) => {
-  isEdit.value = !!fault
+  isEdit.value = Boolean(fault)
   faultForm._id = fault ? fault._id : null
   faultForm.name = fault ? fault.name : ''
   faultForm.desc = fault ? fault.desc : ''
@@ -205,13 +187,9 @@ const openFaultDialog = (fault) => {
   faultDialogVisible.value = true
 }
 
-const splitTextList = (value) => String(value || '')
-  .split(/\n|\uFF1B|;/)
-  .map(item => item.trim())
-  .filter(Boolean)
-
 const saveFault = async () => {
-  if (!faultForm.name.trim()) { ElMessage.warning('请输入故障现象'); return }
+  if (!currentCategory.value) { ElMessage.warning('请先选择产品分类'); return }
+  if (!faultForm.name) { ElMessage.warning('请输入故障现象'); return }
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
@@ -240,8 +218,10 @@ const saveFault = async () => {
 }
 
 const deleteFaultHandler = (fault) => {
-  ElMessageBox.confirm(`确定删除故障"${fault.name}"吗？`, '删除确认', {
-    confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning'
+  ElMessageBox.confirm(`确定删除故障“${fault.name}”吗？`, '删除确认', {
+    confirmButtonText: '确定删除',
+    cancelButtonText: '取消',
+    type: 'warning'
   }).then(async () => {
     loading.value = true
     try {
@@ -250,12 +230,17 @@ const deleteFaultHandler = (fault) => {
       ElMessage.success('故障已删除')
       await loadFaults()
     } catch (error) {
-      ElMessage.error('删除失败')
+      ElMessage.error(error.message || '删除失败')
     } finally {
       loading.value = false
     }
   }).catch(() => {})
 }
+
+onMounted(() => {
+  loadCategories()
+  loadFaults()
+})
 </script>
 
 <style scoped>
@@ -265,12 +250,12 @@ const deleteFaultHandler = (fault) => {
 .section-title { font-size: 16px; font-weight: 600; color: #1d2129; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
 .cat-item { padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; background: #f7f8fa; color: #4e5969; }
 .cat-item.active { background: #e8f3ff; color: #165DFF; font-weight: 600; }
+.cat-actions { display:flex; gap:6px; }
 .table-responsive { width: 100%; overflow-x: auto; }
 .modern-table { min-width: 800px; }
 .modern-table :deep(.el-table__inner-wrapper::before) { display: none; }
 .modern-table :deep(th.el-table__cell) { background-color: #f7f8fa !important; color: #4e5969; font-weight: 600; border-bottom: none; }
 .modern-table :deep(td.el-table__cell) { border-bottom: 1px solid #f0f2f5; padding: 12px 0; }
-
 @media screen and (max-width: 768px) {
   .faultdb-container { flex-direction: column; }
   .faultdb-sidebar { width: 100% !important; margin-bottom: 16px; }

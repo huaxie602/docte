@@ -87,8 +87,11 @@ export const getGuides = (token) => {
 }
 
 // 更新教程
-export const updateGuide = (token, guide_id, file_name, file_url) => {
-  return request.post(`${API_BASE.adminSys}/updateGuide`, { token, guide_id, file_name, file_url })
+export const updateGuide = (token, guide_id, payload, legacyFileUrl) => {
+  const data = typeof payload === 'object'
+    ? { ...payload }
+    : { file_name: payload, file_url: legacyFileUrl }
+  return request.post(`${API_BASE.adminSys}/updateGuide`, { token, guide_id, ...data })
 }
 
 // 上传教程文件（fileContent 为 base64 字符串）

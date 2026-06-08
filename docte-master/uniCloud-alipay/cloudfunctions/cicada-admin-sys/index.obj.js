@@ -3,6 +3,50 @@ const crypto = require('crypto')
 
 const ADMIN_TOKEN_EXPIRE = 8 * 3600 * 1000 // 8小时
 const STAFF_ROLES = ['admin', 'engineer']
+const ADMIN_LOGIN_RATE_LIMIT = {
+  max: 5,
+  windowMs: 15 * 60 * 1000
+}
+const GUIDE_DEFAULTS = [
+  {
+    type: 'quick',
+    category: '快速指南',
+    desc: '跳转到图文并茂的快速入门文档，帮助用户快速了解小程序售后流程。',
+    file_name: '',
+    file_url: '',
+    sort: 1
+  },
+  {
+    type: 'repair',
+    category: '报修指南',
+    desc: '跳转到图文并茂的报修文档，说明报修流程、寄出注意事项和进度查询方式。',
+    file_name: '',
+    file_url: '',
+    sort: 2
+  },
+  {
+    type: 'query',
+    category: '查询指南',
+    desc: '跳转到图文并茂的查询文档，说明工单、物流和维修进度查询方式。',
+    file_name: '',
+    file_url: '',
+    sort: 3
+  },
+  {
+    type: 'invoice',
+    category: '开票指南',
+    desc: '跳转到图文并茂的开票文档，说明发票申请、资料填写和开票进度查看方式。',
+    file_name: '',
+    file_url: '',
+    sort: 4
+  }
+]
+const GUIDE_TYPE_ALIASES = {
+  quick: ['快速指南', '快速入门'],
+  repair: ['报修指南', '报修流程'],
+  query: ['查询指南', '查询办法', '维修查询', '物流寄送'],
+  invoice: ['开票指南', '发票开具']
+}
 
 function genToken() {
   return crypto.randomBytes(32).toString('hex')
@@ -34,6 +78,30 @@ function buildPasswordFields(password) {
   }
 }
 
+function matchGuideType(item = {}) {
+  const type = String(item.type || '').trim()
+  if (GUIDE_TYPE_ALIASES[type]) return type
+
+  const category = String(item.category || '')
+  const matched = Object.entries(GUIDE_TYPE_ALIASES)
+    .find(([, aliases]) => aliases.some(alias => category.includes(alias)))
+  return matched ? matched[0] : ''
+}
+
+async function ensureGuideDefaults() {
+  const col = db.collection('cicada_guides')
+  const res = await col.get()
+  const existingTypes = new Set((res.data || []).map(matchGuideType).filter(Boolean))
+  const now = Date.now()
+
+  for (const guide of GUIDE_DEFAULTS) {
+    if (!existingTypes.has(guide.type)) {
+      await col.add({ ...guide, update_time: now })
+      existingTypes.add(guide.type)
+    }
+  }
+}
+
 async function verifyAdminToken(token, allowedRoles = ['admin']) {
   if (!token) throw new Error('鉴权失败')
   const res = await db.collection('cicada_users').where({ token }).limit(1).get()
@@ -43,6 +111,106 @@ async function verifyAdminToken(token, allowedRoles = ['admin']) {
   }
   if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
   return user
+}
+
+function normalizeIdentity(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function getClientIp(ctx) {
+  const httpInfo = ctx && ctx.getHttpInfo && ctx.getHttpInfo()
+  const headers = (httpInfo && httpInfo.headers) || {}
+  const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'] || ''
+  const forwardedIp = String(forwardedFor).split(',')[0].trim()
+  return forwardedIp ||
+    headers['x-real-ip'] ||
+    headers['X-Real-IP'] ||
+    (httpInfo && (httpInfo.clientIP || httpInfo.clientIp || httpInfo.remoteAddress)) ||
+    'unknown'
+}
+
+async function getRateLimitRecord(key) {
+  const res = await db.collection('cicada_rate_limits').where({ key }).limit(1).get()
+  return res.data && res.data[0]
+}
+
+async function assertAdminLoginAllowed(username, ip) {
+  const identities = [
+    { scope: 'admin-login:username', identity: normalizeIdentity(username) },
+    { scope: 'admin-login:ip', identity: normalizeIdentity(ip) }
+  ].filter(item => item.identity)
+  const now = Date.now()
+
+  for (const item of identities) {
+    const record = await getRateLimitRecord(`${item.scope}:${item.identity}`)
+    if (record && now <= record.reset_time && record.count >= ADMIN_LOGIN_RATE_LIMIT.max) {
+      throw new Error('登录失败次数过多，请 15 分钟后再试')
+    }
+  }
+}
+
+async function recordRateLimitHit(scope, identity) {
+  const normalized = normalizeIdentity(identity)
+  if (!normalized) return
+
+  const now = Date.now()
+  const key = `${scope}:${normalized}`
+  const col = db.collection('cicada_rate_limits')
+  const record = await getRateLimitRecord(key)
+
+  if (!record || now > record.reset_time) {
+    const nextData = {
+      key,
+      scope,
+      identity: normalized,
+      count: 1,
+      reset_time: now + ADMIN_LOGIN_RATE_LIMIT.windowMs,
+      update_time: now
+    }
+    if (record) {
+      await col.doc(record._id).update(nextData)
+    } else {
+      await col.add({
+        ...nextData,
+        create_time: now
+      })
+    }
+    return
+  }
+
+  await col.doc(record._id).update({
+    count: db.command.inc(1),
+    update_time: now
+  })
+}
+
+async function recordAdminLoginFailure(username, ip, userId = '') {
+  await Promise.all([
+    recordRateLimitHit('admin-login:username', username),
+    recordRateLimitHit('admin-login:ip', ip)
+  ])
+
+  if (userId) {
+    await db.collection('cicada_users').doc(userId).update({
+      failed_login_count: db.command.inc(1),
+      last_failed_login: Date.now(),
+      last_login_ip: ip
+    })
+  }
+}
+
+async function clearRateLimit(scope, identity) {
+  const normalized = normalizeIdentity(identity)
+  if (!normalized) return
+  const record = await getRateLimitRecord(`${scope}:${normalized}`)
+  if (record) await db.collection('cicada_rate_limits').doc(record._id).remove()
+}
+
+async function clearAdminLoginFailures(username, ip) {
+  await Promise.all([
+    clearRateLimit('admin-login:username', username),
+    clearRateLimit('admin-login:ip', ip)
+  ])
 }
 
 function verifyPassword(user, password) {
@@ -85,31 +253,43 @@ module.exports = {
           ;({ username, password } = body)
         }
       }
+      const loginIp = getClientIp(this)
       if (!username || !password) return { code: -1, msg: '用户名或密码错误' }
+      await assertAdminLoginAllowed(username, loginIp)
       const res = await db.collection('cicada_users')
         .where({ username })
         .limit(1)
         .get()
-      if (!res.data.length) return { code: -1, msg: '用户名或密码错误' }
+      if (!res.data.length) {
+        await recordAdminLoginFailure(username, loginIp)
+        return { code: -1, msg: '用户名或密码错误' }
+      }
 
       const user = res.data[0]
       if (!STAFF_ROLES.includes(user.role) || user.disabled) {
+        await recordAdminLoginFailure(username, loginIp, user._id)
         return { code: -1, msg: '无管理权限' }
       }
       const pwdCheck = verifyPassword(user, password)
-      if (!pwdCheck) return { code: -1, msg: '用户名或密码错误' }
+      if (!pwdCheck) {
+        await recordAdminLoginFailure(username, loginIp, user._id)
+        return { code: -1, msg: '用户名或密码错误' }
+      }
 
       const token = genToken()
       const tokenExpire = Date.now() + ADMIN_TOKEN_EXPIRE
       const updateData = {
         token,
         token_expire: tokenExpire,
-        last_login: Date.now()
+        last_login: Date.now(),
+        last_login_ip: loginIp,
+        failed_login_count: 0
       }
       if (!user.password_hash || !user.password_salt) {
         Object.assign(updateData, buildPasswordFields(password))
       }
       await db.collection('cicada_users').doc(user._id).update(updateData)
+      await clearAdminLoginFailures(username, loginIp)
 
       return {
         code: 0,
@@ -360,6 +540,7 @@ module.exports = {
       }
       await verifyAdminToken(token, ['admin', 'engineer'])
 
+      await ensureGuideDefaults()
       const res = await db.collection('cicada_guides').orderBy('sort', 'asc').get()
       return { code: 0, data: res.data }
     } catch (e) {
@@ -369,11 +550,11 @@ module.exports = {
 
   async updateGuide(params) {
     try {
-      let token, guide_id, file_name, file_url
+      let token, guide_id, file_name, file_url, file_type, desc
       if (params && params.token) {
-        ({ token, guide_id, file_name, file_url } = params)
+        ({ token, guide_id, file_name, file_url, file_type, desc } = params)
       } else if (this.params) {
-        ({ token, guide_id, file_name, file_url } = this.params)
+        ({ token, guide_id, file_name, file_url, file_type, desc } = this.params)
       }
       await verifyAdminToken(token, ['admin'])
 
@@ -389,6 +570,12 @@ module.exports = {
 
       if (file_url) {
         updateData.file_url = file_url
+      }
+      if (file_type) {
+        updateData.file_type = file_type
+      }
+      if (desc !== undefined) {
+        updateData.desc = desc
       }
 
       const res = await db.collection('cicada_guides').doc(guide_id).update(updateData)
@@ -418,7 +605,8 @@ module.exports = {
       if (!fileContent || !fileName) return { code: -1, msg: '缺少文件内容或文件名' }
 
       const buffer = Buffer.from(fileContent, 'base64')
-      const cloudPath = `guides/${Date.now()}_${fileName}`
+      const safeFileName = String(fileName).replace(/[\\/:*?"<>|]/g, '_')
+      const cloudPath = `guides/${Date.now()}_${safeFileName}`
       const res = await uniCloud.uploadFile({
         cloudPath,
         fileContent: buffer,

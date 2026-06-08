@@ -119,6 +119,11 @@ export const getTodoSummary = (token) => {
 }
 
 // 获取服务数据总结
-export const getDashboardSummary = (token) => {
-  return request.post(`${API_BASE.adminOrder}/getDashboardSummary`, { token })
+export const getDashboardSummary = (token, filters = {}) => {
+  return request.post(`${API_BASE.adminOrder}/getDashboardSummary`, {
+    token,
+    startDate: filters.startDate || '',
+    endDate: filters.endDate || '',
+    granularity: filters.granularity || 'day'
+  })
 }

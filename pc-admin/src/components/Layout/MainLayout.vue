@@ -1,8 +1,8 @@
 <template>
   <div class="main-layout">
-    <div class="mobile-mask" :class="{ 'show': isMobile && sidebarOpen }" @click="sidebarOpen = false"></div>
+    <div class="mobile-mask" :class="{ show: isMobile && sidebarOpen }" @click="sidebarOpen = false"></div>
 
-    <div class="sidebar" :class="{ 'open': sidebarOpen }">
+    <div class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-logo">
         <img src="/brand/cicada-admin-logo.png" alt="CICADA 思科达">
       </div>
@@ -12,8 +12,8 @@
         <el-menu-item index="faultdb"><el-icon><Warning /></el-icon><span>产品故障知识库</span></el-menu-item>
         <el-menu-item index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
         <el-menu-item index="feedback"><el-icon><ChatDotSquare /></el-icon><span>投诉与建议</span></el-menu-item>
-        <el-menu-item index="summary"><el-icon><DataAnalysis /></el-icon><span>服务数据总结</span></el-menu-item>
-        <el-menu-item index="settings"><el-icon><Setting /></el-icon><span>小程序基础配置</span></el-menu-item>
+        <el-menu-item index="summary"><el-icon><DataAnalysis /></el-icon><span>运营汇总看板</span></el-menu-item>
+        <el-menu-item index="settings"><el-icon><Setting /></el-icon><span>小程序配置</span></el-menu-item>
       </el-menu>
     </div>
 
@@ -29,18 +29,9 @@
             <el-avatar size="32" src="https://dummyimage.com/64x64/e8f3ff/165DFF.png&text=Admin" style="cursor:pointer;"></el-avatar>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="profileDrawerVisible = true">
-                  <el-icon><User /></el-icon>
-                  个人信息
-                </el-dropdown-item>
-                <el-dropdown-item @click="openPwdDialog">
-                  <el-icon><Lock /></el-icon>
-                  修改密码
-                </el-dropdown-item>
-                <el-dropdown-item @click="handleLogout" style="color:#F56C6C;">
-                  <el-icon><SwitchButton /></el-icon>
-                  退出登录
-                </el-dropdown-item>
+                <el-dropdown-item @click="profileDrawerVisible = true"><el-icon><User /></el-icon>个人信息</el-dropdown-item>
+                <el-dropdown-item @click="openPwdDialog"><el-icon><Lock /></el-icon>修改密码</el-dropdown-item>
+                <el-dropdown-item @click="handleLogout" style="color:#F56C6C;"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -55,22 +46,14 @@
     </div>
 
     <el-drawer v-model="profileDrawerVisible" title="个人信息" direction="rtl" :size="isMobile ? '100%' : '400px'">
-      <div style="display:flex; flex-direction:column; align-items:center; padding: 8px 0 24px;">
+      <div class="profile-avatar">
         <el-avatar :size="80" src="https://dummyimage.com/64x64/e8f3ff/165DFF.png&text=Admin"></el-avatar>
       </div>
       <el-form :model="profileForm" label-width="90px">
-        <el-form-item label="登录账号">
-          <el-input v-model="profileForm.username" disabled></el-input>
-        </el-form-item>
-        <el-form-item label="真实姓名">
-          <el-input v-model="profileForm.realName" placeholder="请输入真实姓名"></el-input>
-        </el-form-item>
-        <el-form-item label="联系电话">
-          <el-input v-model="profileForm.phone" placeholder="请输入联系电话"></el-input>
-        </el-form-item>
-        <el-form-item label="系统角色">
-          <el-input v-model="profileForm.role" disabled></el-input>
-        </el-form-item>
+        <el-form-item label="登录账号"><el-input v-model="profileForm.username" disabled></el-input></el-form-item>
+        <el-form-item label="真实姓名"><el-input v-model="profileForm.realName" placeholder="请输入真实姓名"></el-input></el-form-item>
+        <el-form-item label="联系电话"><el-input v-model="profileForm.phone" placeholder="请输入联系电话"></el-input></el-form-item>
+        <el-form-item label="系统角色"><el-input v-model="profileForm.role" disabled></el-input></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="profileDrawerVisible = false">取消</el-button>
@@ -80,15 +63,9 @@
 
     <el-dialog title="修改登录密码" v-model="pwdDialogVisible" width="400px" align-center>
       <el-form :model="pwdForm" label-width="100px">
-        <el-form-item label="原密码">
-          <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入原密码"></el-input>
-        </el-form-item>
-        <el-form-item label="新密码">
-          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="请输入新密码"></el-input>
-        </el-form-item>
-        <el-form-item label="确认新密码">
-          <el-input v-model="pwdForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码"></el-input>
-        </el-form-item>
+        <el-form-item label="原密码"><el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入原密码"></el-input></el-form-item>
+        <el-form-item label="新密码"><el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="请输入新密码"></el-input></el-form-item>
+        <el-form-item label="确认新密码"><el-input v-model="pwdForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码"></el-input></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="pwdDialogVisible = false">取消</el-button>
@@ -106,26 +83,45 @@ import { changeMyPassword } from '../../api/admin.js'
 
 const router = useRouter()
 const route = useRoute()
-
 const isMobile = ref(false)
 const sidebarOpen = ref(false)
+
+const menuTitles = {
+  home: '工作台首页',
+  workorder: '报修工单处理中心',
+  faultdb: '产品分类与故障预设',
+  users: '用户管理',
+  settings: '小程序图文及政策配置',
+  feedback: '客户投诉与建议列表',
+  summary: '运营汇总看板'
+}
+
+const roleMap = { admin: '管理员', engineer: '工程师' }
+const getMenuFromPath = () => route.path.replace(/^\//, '') || 'home'
+const activeMenu = ref(getMenuFromPath())
+
+const profileDrawerVisible = ref(false)
+const profileForm = reactive({ username: '', realName: '', phone: '', role: '' })
+const pwdDialogVisible = ref(false)
+const pwdSaving = ref(false)
+const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768
   if (!isMobile.value) sidebarOpen.value = false
 }
-onMounted(() => { checkMobile(); syncProfileFromStorage(); window.addEventListener('resize', checkMobile) })
-onUnmounted(() => { window.removeEventListener('resize', checkMobile) })
 
-const menuTitles = {
-  home: '工作台首页', workorder: '报修工单处理中心', faultdb: '产品分类与故障预设',
-  users: '用户管理', settings: '小程序图文及政策配置', feedback: '客户投诉与建议列表',
-  summary: '服务数据总结'
+const syncProfileFromStorage = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('adminUser') || '{}')
+    profileForm.username = user.username || ''
+    profileForm.realName = user.name || ''
+    profileForm.phone = user.phone || ''
+    profileForm.role = user.roleDisplay || roleMap[user.role] || ''
+  } catch (error) {
+    localStorage.removeItem('adminUser')
+  }
 }
-
-const getMenuFromPath = () => route.path.replace(/^\//, '') || 'home'
-const activeMenu = ref(getMenuFromPath())
-watch(() => route.path, () => { activeMenu.value = getMenuFromPath() })
 
 const handleMenuSelect = (index) => {
   activeMenu.value = index
@@ -140,37 +136,10 @@ const handleLogout = () => {
   router.push('/login')
 }
 
-const profileDrawerVisible = ref(false)
-const roleMap = {
-  admin: '管理员',
-  engineer: '工程师'
+const saveProfile = () => {
+  profileDrawerVisible.value = false
+  ElMessage.info('个人资料保存接口待补充，当前仅展示登录信息')
 }
-const profileForm = reactive({
-  username: '',
-  realName: '',
-  phone: '',
-  role: ''
-})
-const syncProfileFromStorage = () => {
-  try {
-    const user = JSON.parse(localStorage.getItem('adminUser') || '{}')
-    profileForm.username = user.username || ''
-    profileForm.realName = user.name || ''
-    profileForm.phone = user.phone || ''
-    profileForm.role = user.roleDisplay || roleMap[user.role] || ''
-  } catch (error) {
-    localStorage.removeItem('adminUser')
-    profileForm.username = ''
-    profileForm.realName = ''
-    profileForm.phone = ''
-    profileForm.role = ''
-  }
-}
-const saveProfile = () => { profileDrawerVisible.value = false; ElMessage.success('个人信息更新成功') }
-
-const pwdDialogVisible = ref(false)
-const pwdSaving = ref(false)
-const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
 const openPwdDialog = () => {
   pwdForm.oldPassword = ''
@@ -212,35 +181,37 @@ const saveNewPassword = async () => {
     pwdSaving.value = false
   }
 }
+
+watch(() => route.path, () => { activeMenu.value = getMenuFromPath() })
+
+onMounted(() => {
+  checkMobile()
+  syncProfileFromStorage()
+  window.addEventListener('resize', checkMobile)
+})
+onUnmounted(() => { window.removeEventListener('resize', checkMobile) })
 </script>
 
 <style scoped>
 .main-layout { display: flex; height: 100vh; width: 100%; position: relative; }
-
-.mobile-mask { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1000; transition: opacity 0.3s; opacity: 0; }
+.mobile-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; opacity: 0; transition: opacity 0.3s; }
 .mobile-mask.show { display: block; opacity: 1; }
-
 .sidebar { width: var(--sidebar-width, 220px); background: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.02); z-index: 1001; transition: transform 0.3s ease; flex-shrink: 0; }
-.sidebar-logo { height: 60px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid #f0f2f5; flex-shrink: 0; }
-.sidebar-logo img { width: 100%; max-width: 184px; height: auto; display: block; object-fit: contain; }
-.el-menu-vertical { border-right: none; flex: 1; padding: 10px; overflow-y: auto; }
-
-.main-container { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-
-.top-header { height: 60px; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); z-index: 9; flex-shrink: 0; }
-.header-left { display: flex; align-items: center; }
-.hamburger { display: none; cursor: pointer; font-size: 22px; margin-right: 12px; color: #4e5969; }
-.breadcrumb-title { font-size: 16px; font-weight: 600; color: #1d2129; white-space: nowrap; }
-.header-actions { display: flex; align-items: center; gap: 16px; }
-
-.content-area { flex: 1; overflow-y: auto; box-sizing: border-box; }
-.content-wrapper { max-width: 1440px; margin: 0 auto; padding: 24px; }
-
+.sidebar-logo { height: var(--header-height, 64px); display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #f0f2f5; }
+.sidebar-logo img { max-width: 150px; max-height: 40px; object-fit: contain; }
+.el-menu-vertical { border-right: none; padding: 12px; }
+.main-container { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #f5f7fb; }
+.top-header { height: var(--header-height, 64px); background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.03); z-index: 10; flex-shrink: 0; }
+.header-left, .header-actions { display: flex; align-items: center; gap: 16px; }
+.hamburger { font-size: 22px; cursor: pointer; color: #4e5969; }
+.breadcrumb-title { font-size: 16px; font-weight: 600; color: #1d2129; }
+.content-area { flex: 1; overflow-y: auto; padding: 24px; }
+.content-wrapper { max-width: 1600px; margin: 0 auto; }
+.profile-avatar { display:flex; flex-direction:column; align-items:center; padding: 8px 0 24px; }
 @media screen and (max-width: 768px) {
-  .content-wrapper { padding: 16px; }
   .sidebar { position: fixed; top: 0; bottom: 0; left: 0; transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }
-  .hamburger { display: block; }
-  .header-actions .top-btn-text { display: none; }
+  .top-header { padding: 0 16px; }
+  .content-area { padding: 16px; }
 }
 </style>

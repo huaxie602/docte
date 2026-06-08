@@ -2,26 +2,28 @@
   <div class="glass-card">
     <div class="section-title">
       <span>用户管理</span>
-      <el-button type="primary" size="small" @click="openUserDialog(null)"><el-icon><Plus /></el-icon> 新增用户</el-button>
+      <el-button type="primary" size="small" @click="openUserDialog(null)">
+        <el-icon><Plus /></el-icon> 新增用户
+      </el-button>
     </div>
     <div class="table-responsive">
       <el-table :data="users" class="modern-table" style="width:100%;" v-loading="loading">
         <el-table-column prop="name" label="姓名" width="120"></el-table-column>
-        <el-table-column prop="username" label="账号" width="120"></el-table-column>
+        <el-table-column prop="username" label="账号" width="140"></el-table-column>
         <el-table-column prop="phone" label="手机号" width="150"></el-table-column>
         <el-table-column prop="roleDisplay" label="角色" show-overflow-tooltip></el-table-column>
-        <el-table-column label="状态" width="180" align="right">
+        <el-table-column label="状态" width="160" align="right">
           <template #default="{row}">
             <el-switch v-model="row.active" active-text="启用" inactive-text="禁用" @change="toggleUserStatus(row)"></el-switch>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right" align="right">
+        <el-table-column label="操作" width="230" fixed="right" align="right">
           <template #default="{row}">
             <el-button type="primary" link @click="openUserDialog(row)">编辑</el-button>
             <el-button type="danger" link :disabled="row.username === 'admin_root'" @click="confirmResetPassword(row)">重置密码</el-button>
             <el-popconfirm title="确定要禁用该账号吗？" @confirm="deleteUser(row._id)">
               <template #reference>
-                <el-button type="danger" link>禁用</el-button>
+                <el-button type="danger" link :disabled="row.username === 'admin_root'">禁用</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -31,18 +33,18 @@
   </div>
 
   <el-dialog v-model="userDialogVisible" :title="isEditUser ? '编辑用户' : '新增用户'" width="460px" align-center>
-    <el-form :model="userForm" label-width="80px">
+    <el-form :model="userForm" label-width="90px">
       <el-form-item label="登录账号" v-if="!isEditUser">
-        <el-input v-model="userForm.username" placeholder="请输入登录账号"></el-input>
+        <el-input v-model.trim="userForm.username" placeholder="请输入登录账号"></el-input>
       </el-form-item>
       <el-form-item label="登录密码">
-        <el-input v-model="userForm.password" type="password" :placeholder="isEditUser ? '留空则不修改密码' : '请输入登录密码'"></el-input>
+        <el-input v-model="userForm.password" type="password" show-password :placeholder="isEditUser ? '留空则不修改密码' : '请输入登录密码'"></el-input>
       </el-form-item>
       <el-form-item label="姓名">
-        <el-input v-model="userForm.name" placeholder="请输入姓名"></el-input>
+        <el-input v-model.trim="userForm.name" placeholder="请输入姓名"></el-input>
       </el-form-item>
       <el-form-item label="手机号">
-        <el-input v-model="userForm.phone" placeholder="请输入手机号"></el-input>
+        <el-input v-model.trim="userForm.phone" placeholder="请输入手机号"></el-input>
       </el-form-item>
       <el-form-item label="角色">
         <el-select v-model="userForm.role" style="width:100%;">
@@ -66,14 +68,13 @@ import { getStaffList, addStaff, editStaff, disableStaff, resetUserPassword } fr
 const users = ref([])
 const loading = ref(false)
 
-// 角色映射
 const roleMap = {
-  'admin': '管理员',
-  'engineer': '工程师'
+  admin: '管理员',
+  engineer: '工程师'
 }
 const roleMapReverse = {
-  '管理员': 'admin',
-  '工程师': 'engineer'
+  管理员: 'admin',
+  工程师: 'engineer'
 }
 
 const userDialogVisible = ref(false)
@@ -87,7 +88,6 @@ const userForm = reactive({
   role: '工程师'
 })
 
-// 加载员工列表
 const loadUsers = async () => {
   loading.value = true
   try {
@@ -99,18 +99,14 @@ const loadUsers = async () => {
       active: !u.disabled
     }))
   } catch (error) {
-    ElMessage.error('加载员工列表失败')
+    ElMessage.error(error.message || '加载员工列表失败')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
-  loadUsers()
-})
-
 const openUserDialog = (user) => {
-  isEditUser.value = !!user
+  isEditUser.value = Boolean(user)
   userForm._id = user ? user._id : null
   userForm.username = user ? user.username : ''
   userForm.password = ''
@@ -121,15 +117,15 @@ const openUserDialog = (user) => {
 }
 
 const saveUser = async () => {
-  if (!userForm.name.trim() || !userForm.phone.trim()) {
+  if (!userForm.name || !userForm.phone) {
     ElMessage.warning('请完整填写用户信息')
     return
   }
-  if (!isEditUser.value && !userForm.username.trim()) {
+  if (!isEditUser.value && !userForm.username) {
     ElMessage.warning('请输入登录账号')
     return
   }
-  if (!isEditUser.value && !userForm.password.trim()) {
+  if (!isEditUser.value && !userForm.password) {
     ElMessage.warning('请输入登录密码')
     return
   }
@@ -141,7 +137,7 @@ const saveUser = async () => {
       username: userForm.username,
       name: userForm.name,
       phone: userForm.phone,
-      role: roleMapReverse[userForm.role]
+      role: roleMapReverse[userForm.role] || 'engineer'
     }
     if (userForm.password) staff.password = userForm.password
     if (isEditUser.value) staff._id = userForm._id
@@ -170,7 +166,7 @@ const deleteUser = async (userId) => {
     ElMessage.success('账号已禁用')
     await loadUsers()
   } catch (error) {
-    ElMessage.error('操作失败')
+    ElMessage.error(error.message || '操作失败')
   } finally {
     loading.value = false
   }
@@ -180,7 +176,7 @@ const confirmResetPassword = async (user) => {
   if (!user) return
   try {
     await ElMessageBox.confirm(
-      `确定将${user.roleDisplay || '账号'} [${user.name || user.username}] 的密码重置为系统默认密码 123456 吗？`,
+      `确定将 ${user.roleDisplay || '账号'} [${user.name || user.username}] 的密码重置为系统默认密码 123456 吗？`,
       '重置密码确认',
       {
         confirmButtonText: '确认重置',
@@ -203,21 +199,22 @@ const confirmResetPassword = async (user) => {
   }
 }
 
-// 切换用户状态
 const toggleUserStatus = async (user) => {
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
     await disableStaff(token, user._id, !user.active)
-    ElMessage.success(user.active ? '已禁用' : '已启用')
+    ElMessage.success(user.active ? '已启用' : '已禁用')
     await loadUsers()
   } catch (error) {
-    ElMessage.error('操作失败')
-    user.active = !user.active // 恢复状态
+    ElMessage.error(error.message || '操作失败')
+    user.active = !user.active
   } finally {
     loading.value = false
   }
 }
+
+onMounted(loadUsers)
 </script>
 
 <style scoped>

@@ -57,7 +57,7 @@
         <el-button type="primary" plain class="top-btn-text" :loading="importing" @click="openImportDialog('return')">
           <el-icon><Upload /></el-icon> 导入回寄单
         </el-button>
-        <el-button plain class="top-btn-text" :disabled="!selectedOrders.length" @click="handleBatchPrint"><el-icon><Printer /></el-icon> 批量打印</el-button>
+        <el-button plain class="top-btn-text" :disabled="!selectedOrders.length" @click="handleConfiguredBatchPrint"><el-icon><Printer /></el-icon> 批量打印</el-button>
         <el-dropdown trigger="click" :disabled="!selectedOrders.length || batchCompleting" @command="handleBatchStatusCommand">
           <el-button type="warning" plain class="top-btn-text" :disabled="!selectedOrders.length" :loading="batchCompleting">
             <el-icon><CircleCheck /></el-icon> 批量状态 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -454,7 +454,7 @@
           </el-radio-group>
         </div>
         <div class="drawer-footer-actions">
-          <el-button @click="printOrder" plain><el-icon><Printer /></el-icon> 打印</el-button>
+          <el-button @click="printConfiguredOrder" plain><el-icon><Printer /></el-icon> 打印</el-button>
           <el-button @click="drawerVisible=false">关闭</el-button>
           <el-button type="primary" :loading="quickStatusLoading" @click="confirmStatus">保存</el-button>
         </div>
@@ -645,10 +645,11 @@ import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchImportLogistics, batchUpdateShipping, getOrderList, updateInvoiceStatus, updateOrderQuote, updateOrderStatus, updatePaymentStatus, updateRemarks } from '../api/order.js'
+import { getSettings } from '../api/admin.js'
 import { exportOrdersToWorkbook, formatOrderAttachments, formatOrderItems } from '../utils/orderExport.js'
 import { transformOrders } from '../utils/orderTransform.js'
 import { toEnglishStatus } from '../utils/orderStatus.js'
-import { openPrintWindow } from '../utils/orderPrint.js'
+import { openPrintWindow, parsePrintConfig } from '../utils/orderPrint.js'
 import { downloadShippingTemplate, getLogisticsImportTypeLabel, parseShippingExcelFile } from '../utils/shippingImport.js'
 
 const route = useRoute()
@@ -816,6 +817,7 @@ const deviceModelOptions = ref([])
 const selectedOrders = ref([])
 const isPrinting = ref(false)
 const printTime = ref('')
+const printConfig = ref(parsePrintConfig())
 const exportDialogVisible = ref(false)
 const selectedExportFields = ref(exportableFields.map(field => field.key))
 const checkAll = ref(true)
@@ -913,6 +915,7 @@ const clearTodoFilter = () => {
 
 onMounted(() => {
   applyRouteFilters()
+  loadPrintConfig()
   loadOrders()
 })
 
@@ -1561,6 +1564,33 @@ const handleBatchPrint = async () => {
   window.addEventListener('afterprint', resetPrinting, { once: true })
   window.print()
   setTimeout(resetPrinting, 1000)
+}
+
+const loadPrintConfig = async () => {
+  try {
+    const token = localStorage.getItem('adminToken')
+    const data = await getSettings(token)
+    printConfig.value = parsePrintConfig(data && data.print_config)
+  } catch (error) {
+    printConfig.value = parsePrintConfig()
+  }
+}
+
+const printConfiguredOrder = () => {
+  if (!currentOrder.value) return
+  if (!openPrintWindow([currentOrder.value], printConfig.value)) {
+    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
+  }
+}
+
+const handleConfiguredBatchPrint = () => {
+  if (!selectedOrders.value.length) {
+    ElMessage.warning('请先勾选要打印的工单')
+    return
+  }
+  if (!openPrintWindow(selectedOrders.value, printConfig.value)) {
+    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
+  }
 }
 
 const openImportDialog = (type = 'return') => {

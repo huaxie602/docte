@@ -4,7 +4,7 @@
       <h2 class="login-title">牙科仪器检修管理系统 - 登录</h2>
       <el-form :model="loginForm">
         <el-form-item>
-          <el-input v-model="loginForm.username" type="text" inputmode="text" placeholder="请输入账号"></el-input>
+          <el-input v-model.trim="loginForm.username" type="text" inputmode="text" placeholder="请输入账号"></el-input>
         </el-form-item>
         <el-form-item>
           <el-input v-model="loginForm.password" type="password" inputmode="text" placeholder="请输入密码" show-password></el-input>
@@ -20,6 +20,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { adminLogin } from '../api/admin.js'
+import { resetSessionExpiredNotice } from '../utils/adminSession.js'
 
 const router = useRouter()
 const loginForm = reactive({ username: '', password: '' })
@@ -36,10 +37,13 @@ const handleLogin = async () => {
     const res = await adminLogin(loginForm.username, loginForm.password)
     localStorage.setItem('adminToken', res.token)
     localStorage.setItem('adminUser', JSON.stringify(res.user))
+    resetSessionExpiredNotice()
     ElMessage.success('登录成功')
     router.push('/home')
   } catch (error) {
-    ElMessage.error(error.message || '登录失败')
+    if (!error.__displayed) {
+      ElMessage.error(error.message || '登录失败')
+    }
   } finally {
     loading.value = false
   }
