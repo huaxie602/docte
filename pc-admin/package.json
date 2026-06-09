@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "mock": "node scripts/local-mock-server.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "check:urls": "node scripts/check-admin-urls.mjs",

@@ -8,7 +8,7 @@
     <el-row :gutter="20">
       <el-col :xs="24" :sm="12" :md="8">
         <div class="glass-card clickable-card" @click="navigateTo('workorder', '')">
-          <div class="section-title">待处理工单 <el-tag type="danger" round size="small">急</el-tag></div>
+          <div class="section-title">待处理工单 <el-tag class="home-badge home-badge-urgent" type="danger" round>急</el-tag></div>
           <div style="font-size: 36px; font-weight: bold; color: #165DFF;">{{ stats.pendingCount }} <span style="font-size:14px;color:#86909c;font-weight:normal;">件</span></div>
         </div>
       </el-col>
@@ -36,7 +36,7 @@
           <div class="glass-card todo-card" @click="navigateTodo(item.key)">
             <div class="todo-title">
               <span>{{ item.title }}</span>
-              <el-tag :type="item.count ? 'warning' : 'info'" round size="small">{{ item.count }} 件</el-tag>
+              <el-tag class="home-badge" :type="item.count ? 'warning' : 'info'" round>{{ item.count }} 件</el-tag>
             </div>
             <div class="todo-desc">{{ item.desc }}</div>
           </div>
@@ -136,6 +136,21 @@ onMounted(() => {
 .todo-title {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 16px; font-weight: 600; color: #1d2129; margin-bottom: 12px;
+}
+.home-badge {
+  min-width: 42px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 26px;
+}
+.home-badge-urgent {
+  min-width: 52px;
+  height: 34px;
+  padding: 0 16px;
+  font-size: 16px;
+  line-height: 32px;
 }
 .todo-desc { color: #86909c; line-height: 1.5; font-size: 13px; }
 

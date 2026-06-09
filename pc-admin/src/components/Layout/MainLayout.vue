@@ -26,7 +26,7 @@
         <div class="header-actions">
           <el-button type="primary" plain round size="small" class="top-btn-text"><el-icon><Monitor /></el-icon> 访问小程序</el-button>
           <el-dropdown>
-            <el-avatar size="32" src="https://dummyimage.com/64x64/e8f3ff/165DFF.png&text=Admin" style="cursor:pointer;"></el-avatar>
+            <el-avatar :size="32" src="https://dummyimage.com/64x64/e8f3ff/165DFF.png&text=Admin" style="cursor:pointer;"></el-avatar>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="profileDrawerVisible = true"><el-icon><User /></el-icon>个人信息</el-dropdown-item>

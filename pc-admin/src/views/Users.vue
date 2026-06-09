@@ -14,14 +14,15 @@
         <el-table-column prop="roleDisplay" label="角色" show-overflow-tooltip></el-table-column>
         <el-table-column label="状态" width="160" align="right">
           <template #default="{row}">
-            <el-switch v-model="row.active" active-text="启用" inactive-text="禁用" @change="toggleUserStatus(row)"></el-switch>
+            <el-tag v-if="isCurrentUser(row)" type="info" effect="plain">当前账号</el-tag>
+            <el-switch v-else v-model="row.active" active-text="启用" inactive-text="禁用" @change="toggleUserStatus(row)"></el-switch>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="230" fixed="right" align="right">
           <template #default="{row}">
             <el-button type="primary" link @click="openUserDialog(row)">编辑</el-button>
             <el-button type="danger" link :disabled="row.username === 'admin_root'" @click="confirmResetPassword(row)">重置密码</el-button>
-            <el-popconfirm title="确定要禁用该账号吗？" @confirm="deleteUser(row._id)">
+            <el-popconfirm v-if="!isCurrentUser(row)" title="确定要禁用该账号吗？" @confirm="deleteUser(row._id)">
               <template #reference>
                 <el-button type="danger" link :disabled="row.username === 'admin_root'">禁用</el-button>
               </template>
@@ -88,16 +89,40 @@ const userForm = reactive({
   role: '工程师'
 })
 
+const getCurrentUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('adminUser') || '{}')
+  } catch (error) {
+    return {}
+  }
+}
+
+const isCurrentUser = (user = {}) => {
+  const currentUser = getCurrentUser()
+  return Boolean(
+    (currentUser._id && user._id === currentUser._id) ||
+    (currentUser.username && user.username === currentUser.username)
+  )
+}
+
+const sortCurrentUserFirst = (list = []) => {
+  return [...list].sort((a, b) => {
+    if (isCurrentUser(a)) return -1
+    if (isCurrentUser(b)) return 1
+    return 0
+  })
+}
+
 const loadUsers = async () => {
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
     const data = await getStaffList(token)
-    users.value = data.map(u => ({
+    users.value = sortCurrentUserFirst(data.map(u => ({
       ...u,
       roleDisplay: roleMap[u.role] || u.role,
       active: !u.disabled
-    }))
+    })))
   } catch (error) {
     ElMessage.error(error.message || '加载员工列表失败')
   } finally {
@@ -159,6 +184,12 @@ const saveUser = async () => {
 }
 
 const deleteUser = async (userId) => {
+  const targetUser = users.value.find(user => user._id === userId)
+  if (isCurrentUser(targetUser)) {
+    ElMessage.warning('当前登录账号不能禁用自身')
+    return
+  }
+
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
@@ -200,6 +231,12 @@ const confirmResetPassword = async (user) => {
 }
 
 const toggleUserStatus = async (user) => {
+  if (isCurrentUser(user)) {
+    user.active = true
+    ElMessage.warning('当前登录账号不能更改自身状态')
+    return
+  }
+
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')

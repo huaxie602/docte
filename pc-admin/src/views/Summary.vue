@@ -59,10 +59,67 @@
     <section class="summary-section">
       <div class="section-head">
         <div class="section-title">趋势对比</div>
-        <span class="section-meta">{{ rangeText }} · {{ granularity === 'day' ? '按日统计' : '按周统计' }}</span>
+        <div class="section-tools">
+          <span class="section-meta">{{ rangeText }} · {{ granularity === 'day' ? '按日统计' : '按周统计' }}</span>
+          <el-button size="small" :type="trendViewMode === 'line' ? 'primary' : 'default'" @click="toggleTrendView">
+            {{ trendViewMode === 'line' ? '柱状对比' : '曲线图' }}
+          </el-button>
+        </div>
       </div>
       <el-card shadow="never" class="trend-card">
-        <div v-if="trendRows.length" class="trend-list">
+        <div v-if="trendRows.length && trendViewMode === 'line'" class="trend-chart">
+          <div class="trend-legend">
+            <span v-for="item in trendSeries" :key="item.key"><i :style="{ background: item.color }"></i>{{ item.label }}</span>
+          </div>
+          <div class="trend-scroll">
+            <svg
+              class="trend-svg"
+              :style="{ width: `${chartWidth}px` }"
+              :viewBox="`0 0 ${chartWidth} 300`"
+              role="img"
+              aria-label="趋势曲线图"
+            >
+              <line
+                v-for="tick in trendYAxisTicks"
+                :key="tick.key"
+                class="chart-grid"
+                :x1="chartBounds.left"
+                :x2="chartRight"
+                :y1="tick.y"
+                :y2="tick.y"
+              />
+              <text
+                v-for="tick in trendYAxisTicks"
+                :key="`label-${tick.key}`"
+                class="chart-axis-label"
+                :x="chartBounds.left - 12"
+                :y="tick.y + 4"
+                text-anchor="end"
+              >{{ tick.value }}</text>
+              <g v-for="series in trendSeriesPaths" :key="series.key">
+                <path class="chart-line" :d="series.path" :stroke="series.color" />
+                <circle
+                  v-for="point in series.points"
+                  :key="`${series.key}-${point.label}`"
+                  class="chart-point"
+                  :cx="point.x"
+                  :cy="point.y"
+                  r="4"
+                  :fill="series.color"
+                />
+              </g>
+              <text
+                v-for="point in trendXAxisLabels"
+                :key="point.label"
+                class="chart-axis-label"
+                :x="point.x"
+                y="286"
+                text-anchor="middle"
+              >{{ point.label }}</text>
+            </svg>
+          </div>
+        </div>
+        <div v-else-if="trendRows.length" class="trend-list">
           <div v-for="row in trendRows" :key="row.label" class="trend-row">
             <div class="trend-date">{{ row.label }}</div>
             <div class="trend-bars">
@@ -97,6 +154,20 @@ const granularity = ref('day')
 const quickRange = ref('7d')
 const dateRange = ref([])
 const trendRows = ref([])
+const trendViewMode = ref('bar')
+const chartBounds = {
+  left: 56,
+  top: 24,
+  bottom: 252
+}
+const minChartWidth = 900
+const chartPointGap = 86
+const chartRightPadding = 32
+const trendSeries = [
+  { key: 'newOrders', label: '新增', color: '#165dff' },
+  { key: 'completedOrders', label: '完成', color: '#12b76a' },
+  { key: 'pendingOrders', label: '待处理', color: '#f79009' }
+]
 
 const quickRangeOptions = [
   { label: '近7天', value: '7d' },
@@ -144,6 +215,74 @@ const maxTrendValue = computed(() => {
   return Math.max(...values, 1)
 })
 
+const chartMaxValue = computed(() => Math.max(maxTrendValue.value, 1))
+const chartWidth = computed(() => {
+  const rowCount = Math.max(trendRows.value.length, 1)
+  return Math.max(minChartWidth, chartBounds.left + chartRightPadding + (rowCount - 1) * chartPointGap)
+})
+const chartRight = computed(() => chartWidth.value - chartRightPadding)
+const chartPlotGap = computed(() => {
+  const rowCount = trendRows.value.length
+  if (rowCount <= 1) return 0
+  return (chartRight.value - chartBounds.left) / (rowCount - 1)
+})
+
+const getChartX = (index) => {
+  if (trendRows.value.length <= 1) return (chartBounds.left + chartRight.value) / 2
+  return chartBounds.left + index * chartPlotGap.value
+}
+
+const getChartY = (value) => {
+  const ratio = Number(value || 0) / chartMaxValue.value
+  return chartBounds.bottom - ratio * (chartBounds.bottom - chartBounds.top)
+}
+
+const buildSmoothPath = (points) => {
+  if (!points.length) return ''
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y} L ${points[0].x} ${points[0].y}`
+
+  return points.slice(1).reduce((path, point, index) => {
+    const prev = points[index]
+    const middleX = (prev.x + point.x) / 2
+    return `${path} C ${middleX} ${prev.y}, ${middleX} ${point.y}, ${point.x} ${point.y}`
+  }, `M ${points[0].x} ${points[0].y}`)
+}
+
+const trendSeriesPaths = computed(() => trendSeries.map(series => {
+  const points = trendRows.value.map((row, index) => ({
+    label: row.label,
+    value: Number(row[series.key] || 0),
+    x: getChartX(index),
+    y: getChartY(row[series.key])
+  }))
+  return {
+    ...series,
+    points,
+    path: buildSmoothPath(points)
+  }
+}))
+
+const trendYAxisTicks = computed(() => {
+  const tickCount = 4
+  return Array.from({ length: tickCount + 1 }, (_, index) => {
+    const value = Math.round((chartMaxValue.value / tickCount) * (tickCount - index))
+    return {
+      key: `${index}-${value}`,
+      value,
+      y: getChartY(value)
+    }
+  })
+})
+
+const trendXAxisLabels = computed(() => {
+  const rows = trendRows.value
+  if (!rows.length) return []
+  const step = rows.length <= 8 ? 1 : Math.ceil(rows.length / 6)
+  return rows
+    .map((row, index) => ({ label: row.label, x: getChartX(index), index }))
+    .filter((item, index) => index === 0 || index === rows.length - 1 || index % step === 0)
+})
+
 const pad = (num) => String(num).padStart(2, '0')
 const formatDate = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 
@@ -170,6 +309,10 @@ const formatMetric = (value, precision = 0) => {
 }
 
 const barWidth = (value) => Math.max(6, Math.round((Number(value || 0) / maxTrendValue.value) * 100))
+
+const toggleTrendView = () => {
+  trendViewMode.value = trendViewMode.value === 'line' ? 'bar' : 'line'
+}
 
 const fetchSummaryData = async () => {
   loading.value = true
@@ -256,6 +399,14 @@ onMounted(() => {
   gap: 12px;
 }
 
+.section-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .section-title {
   padding-left: 12px;
   border-left: 4px solid #165dff;
@@ -336,6 +487,83 @@ onMounted(() => {
   border-radius: 16px;
 }
 
+.trend-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.trend-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trend-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.trend-svg {
+  display: block;
+  width: 100%;
+  max-width: none;
+  min-height: 280px;
+}
+
+.trend-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-gutter: stable;
+}
+
+.trend-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.trend-scroll::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #eef2f7;
+}
+
+.trend-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c9d3e3;
+}
+
+.chart-grid {
+  stroke: #eef2f7;
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: #98a2b3;
+  font-size: 12px;
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-point {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
 .trend-list {
   display: flex;
   flex-direction: column;
@@ -400,6 +628,15 @@ onMounted(() => {
   }
 
   .summary-actions {
+    justify-content: flex-start;
+  }
+
+  .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .section-tools {
     justify-content: flex-start;
   }
 
