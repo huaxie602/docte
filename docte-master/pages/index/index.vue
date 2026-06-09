@@ -831,7 +831,19 @@
 					<view class="feedback-area">
 						<text><text class="required-star">*</text>详细描述</text>
 						<textarea v-model="feedbackText" maxlength="500" :placeholder="feedbackType === '投诉' ? '请描述问题发生的时间、经过以及您的诉求……' : '请描述您的建议与期望，我们会认真评估……'" placeholder-class="input-placeholder"></textarea>
-						<view><text>可附 0/3 张图片</text><text>{{ feedbackText.length }}/500</text></view>
+						<view><text>可附 {{ feedbackImages.length }}/{{ maxFeedbackImages }} 张图片</text><text>{{ feedbackText.length }}/500</text></view>
+					</view>
+					<view class="feedback-images">
+						<view class="media-grid feedback-media-grid">
+							<view v-for="(image, index) in feedbackImages" :key="image.id" class="media-thumb tap" @click="previewFeedbackImage(index)">
+								<image class="media-image" :src="getPreviewUrl(image)" mode="aspectFill"></image>
+								<view class="media-remove tap" @click.stop="removeFeedbackImage(image.id)">×</view>
+							</view>
+							<view v-if="feedbackImages.length < maxFeedbackImages" class="media-add tap" :class="{ disabled: feedbackImageUploading || feedbackSubmitting }" @click="chooseFeedbackImages">
+								<text>+</text>
+								<text>{{ feedbackImageUploading ? '上传中' : '添加' }}</text>
+							</view>
+						</view>
 					</view>
 					<view class="feedback-contact">
 						<text><text class="required-star">*</text>联系方式</text>
@@ -849,7 +861,7 @@
 					<text>选填 · 填写后便于我们快速定位问题</text>
 					<input v-model="feedbackOrderId" placeholder="如 DR-20260508-1147" placeholder-class="input-placeholder" />
 				</view>
-				<view class="primary-button tap save-button" @click="submitFeedback">提交{{ feedbackType }}</view>
+				<view class="primary-button tap save-button" :class="{ disabled: feedbackSubmitting }" @click="submitFeedback">{{ feedbackSubmitting ? '提交中...' : '提交' + feedbackType }}</view>
 				<text class="submit-note">提交后预计 1 至 3 个工作日内反馈结果</text>
 				<view class="feedback-history">
 					<view class="module-section-head single"><text>我的反馈单</text></view>
@@ -867,6 +879,9 @@
 								<view><text>联系方式</text><text>{{ record.contact }}</text></view>
 							</view>
 							<text class="feedback-ticket-content">{{ record.content }}</text>
+							<view v-if="record.images && record.images.length" class="feedback-ticket-images">
+								<image v-for="(image, index) in record.images" :key="image.id || image.url || image || index" :src="image.url || image" mode="aspectFill" class="feedback-ticket-image tap" @click="previewFeedbackRecordImage(record, index)"></image>
+							</view>
 							<view class="feedback-reply">
 								<text>客服回复</text>
 								<text>{{ record.reply || '已收到反馈，客服处理后会在这里同步回复。' }}</text>
@@ -1309,6 +1324,7 @@ import {
 	addComplaint,
 	devLogin,
 	wechatLogin,
+	uploadFeedbackImage,
 	uploadImage,
 	uploadVideo
 } from '@/api/content'
@@ -1390,9 +1406,12 @@ const invoiceSubmitting = ref(false)
 const paymentSubmitting = ref(false)
 const paymentProofUploading = ref(false)
 const subscriptionTemplates = ref(null)
+const feedbackSubmitting = ref(false)
+const feedbackImageUploading = ref(false)
 const feedbackType = ref('建议')
 const feedbackContactKind = ref('phone')
 const feedbackText = ref('')
+const feedbackImages = ref([])
 
 const subscriptionSceneMap = {
 	repair_submit: ['repair_submitted', 'order_received', 'quote_issued'],
@@ -1464,6 +1483,7 @@ const orderLocalPatches = ref({})
 
 let repairProductSeed = 1
 let repairMediaSeed = 1
+let feedbackImageSeed = 1
 
 logBoot('base refs ready')
 
@@ -1682,6 +1702,7 @@ const feedbackContacts = [
 
 const feedbackTypes = ['建议', '投诉']
 const maxRepairImageSize = 10 * 1024 * 1024
+const maxFeedbackImages = 3
 const maxRepairVideoSize = 50 * 1024 * 1024
 const phoneRegex = /^1[3-9]\d{9}$/
 const trackingNoRegex = /^[A-Za-z0-9-]{6,32}$/
@@ -2755,8 +2776,23 @@ const getFeedbackMeta = (record = {}) => {
 	return metaMap[record.status] || metaMap.submitted
 }
 
-const addLocalFeedbackRecord = (status = 'submitted') => {
-	const ticketNo = feedbackTicketNo()
+const getFeedbackRecordImages = () => feedbackImages.value
+	.map((item) => ({
+		id: item.id,
+		url: getPreviewUrl(item),
+		fileID: item.fileID || item.fileId || ''
+	}))
+	.filter((item) => item.url)
+
+const resetFeedbackForm = () => {
+	feedbackText.value = ''
+	feedbackContactValue.value = ''
+	feedbackOrderId.value = ''
+	feedbackImages.value = []
+}
+
+const addLocalFeedbackRecord = (status = 'submitted', result = {}) => {
+	const ticketNo = result.ticketNo || result.ticket_no || result.id || feedbackTicketNo()
 	const record = {
 		ticketNo,
 		type: feedbackType.value,
@@ -2764,6 +2800,7 @@ const addLocalFeedbackRecord = (status = 'submitted') => {
 		contactType: feedbackContactKind.value,
 		contact: feedbackContactValue.value.trim(),
 		orderId: feedbackOrderId.value.trim(),
+		images: getFeedbackRecordImages(),
 		status,
 		reply: '',
 		time: todayText()
@@ -2771,6 +2808,15 @@ const addLocalFeedbackRecord = (status = 'submitted') => {
 	feedbackRecords.value = [record, ...feedbackRecords.value].slice(0, 10)
 	saveFeedbackRecords()
 	return record
+}
+
+const previewFeedbackRecordImage = (record = {}, index = 0) => {
+	const urls = (record.images || []).map((item) => (typeof item === 'string' ? item : item.url)).filter(Boolean)
+	if (!urls.length) return
+	uni.previewImage({
+		current: urls[index] || urls[0],
+		urls
+	})
 }
 
 const previewSurveyPoster = () => {
@@ -2923,8 +2969,95 @@ const getPreviewUrl = (item = {}) => {
 	return isCloudFileId(url) ? (item.path || '') : url
 }
 const getUploadedUrl = (item = {}) => item.fileID || item.fileId || item.cloudUrl || item.url || item.path || ''
+const isPickerCancel = (error = {}) => String(error.errMsg || error.message || error || '').toLowerCase().includes('cancel')
 const isAuthError = (error = {}) => /鉴权失败|Token|token/i.test(String(error.message || error.errMsg || ''))
 const hasLoginToken = () => Boolean(uni.getStorageSync('token'))
+
+const chooseFeedbackImages = async () => {
+	if (feedbackSubmitting.value) return
+	if (feedbackImageUploading.value) return
+
+	const remaining = maxFeedbackImages - feedbackImages.value.length
+	if (remaining <= 0) {
+		uni.showToast({ title: `最多上传${maxFeedbackImages}张图片`, icon: 'none' })
+		return
+	}
+
+	let loadingShown = false
+	feedbackImageUploading.value = true
+	try {
+		const chooseRes = await uni.chooseImage({
+			count: remaining,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera']
+		})
+		const paths = chooseRes.tempFilePaths || []
+		if (!paths.length) return
+		const oversized = (chooseRes.tempFiles || []).find((file) => isFileTooLarge(file, maxRepairImageSize))
+		if (oversized) {
+			uni.showToast({ title: `图片不能超过${formatFileSize(maxRepairImageSize)}`, icon: 'none' })
+			return
+		}
+
+		uni.showLoading({ title: '上传中' })
+		loadingShown = true
+		const uploadedImages = []
+		let failedCount = 0
+
+		for (const path of paths) {
+			if (feedbackImages.value.length + uploadedImages.length >= maxFeedbackImages) break
+			try {
+				const uploadRes = await uploadFeedbackImage(path)
+				feedbackImageSeed += 1
+				uploadedImages.push({
+					id: `feedback-img-${feedbackImageSeed}`,
+					path,
+					fileID: normalizeUploadFileId(uploadRes),
+					url: normalizeUploadUrl(uploadRes, path)
+				})
+			} catch (error) {
+				failedCount += 1
+				console.warn('upload feedback image failed:', error)
+			}
+		}
+
+		if (uploadedImages.length) {
+			feedbackImages.value = [...feedbackImages.value, ...uploadedImages].slice(0, maxFeedbackImages)
+		}
+
+		uni.hideLoading()
+		loadingShown = false
+		if (failedCount && uploadedImages.length) {
+			uni.showToast({ title: '部分图片上传失败', icon: 'none' })
+		} else if (failedCount) {
+			uni.showToast({ title: '图片上传失败', icon: 'none' })
+		} else {
+			uni.showToast({ title: '上传成功', icon: 'success' })
+		}
+	} catch (error) {
+		if (!isPickerCancel(error)) {
+			console.warn('choose feedback image failed:', error)
+			uni.showToast({ title: '图片选择失败', icon: 'none' })
+		}
+	} finally {
+		feedbackImageUploading.value = false
+		if (loadingShown) uni.hideLoading()
+	}
+}
+
+const previewFeedbackImage = (index = 0) => {
+	const urls = feedbackImages.value.map(getPreviewUrl).filter(Boolean)
+	if (!urls.length) return
+	uni.previewImage({
+		current: urls[index] || urls[0],
+		urls
+	})
+}
+
+const removeFeedbackImage = (imageId) => {
+	if (feedbackSubmitting.value || feedbackImageUploading.value) return
+	feedbackImages.value = feedbackImages.value.filter((item) => item.id !== imageId)
+}
 
 const uploadRepairImage = async (index) => {
 	const product = repairProducts.value[index]
@@ -3386,29 +3519,34 @@ const handleDeleteAddress = async () => {
 }
 
 const submitFeedback = async () => {
+	if (feedbackSubmitting.value) return
 	if (!feedbackText.value.trim() || !feedbackContactValue.value.trim()) {
 		uni.showToast({ title: '请填写反馈内容和联系方式', icon: 'none' })
 		return
 	}
+	if (feedbackImageUploading.value) {
+		uni.showToast({ title: '图片上传中，请稍后提交', icon: 'none' })
+		return
+	}
 
+	feedbackSubmitting.value = true
 	try {
-		await addComplaint({
+		const result = await addComplaint({
 			type: feedbackType.value === '投诉' ? 0 : 1,
 			content: feedbackText.value.trim(),
+			images: feedbackImages.value.map(getUploadedUrl).filter(Boolean).slice(0, maxFeedbackImages),
 			contactType: feedbackContactKind.value,
 			contact: feedbackContactValue.value.trim(),
 			orderId: feedbackOrderId.value.trim()
 		})
-		const record = addLocalFeedbackRecord('submitted')
+		const record = addLocalFeedbackRecord('submitted', result || {})
 		uni.showModal({
 			title: '提交成功',
 			content: `反馈单号：${record.ticketNo}。客服回复和处理状态会在“我的反馈单”中展示。`,
 			showCancel: false,
 			confirmText: '知道了'
 		})
-		feedbackText.value = ''
-		feedbackContactValue.value = ''
-		feedbackOrderId.value = ''
+		resetFeedbackForm()
 	} catch (error) {
 		console.warn('submit feedback fallback:', error)
 		const record = addLocalFeedbackRecord('submitted')
@@ -3418,9 +3556,9 @@ const submitFeedback = async () => {
 			showCancel: false,
 			confirmText: '知道了'
 		})
-		feedbackText.value = ''
-		feedbackContactValue.value = ''
-		feedbackOrderId.value = ''
+		resetFeedbackForm()
+	} finally {
+		feedbackSubmitting.value = false
 	}
 }
 
@@ -6735,6 +6873,11 @@ onMounted(() => {
 	font-size: 20rpx;
 }
 
+.media-add.disabled {
+	opacity: 0.58;
+	pointer-events: none;
+}
+
 .media-add text:first-child {
 	font-size: 44rpx;
 	line-height: 1;
@@ -9829,6 +9972,15 @@ onMounted(() => {
 	color: #94A3B8;
 }
 
+.feedback-images {
+	padding: 8rpx 28rpx 28rpx;
+	border-bottom: 2rpx solid #F1F5FB;
+}
+
+.feedback-media-grid {
+	gap: 16rpx;
+}
+
 .feedback-contact {
 	padding: 28rpx;
 }
@@ -9990,6 +10142,20 @@ onMounted(() => {
 	font-size: 25rpx;
 	line-height: 1.6;
 	color: #324563;
+}
+
+.feedback-ticket-images {
+	margin-top: 18rpx;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14rpx;
+}
+
+.feedback-ticket-image {
+	width: 112rpx;
+	height: 112rpx;
+	border-radius: 14rpx;
+	background: #F3F8FF;
 }
 
 .feedback-reply {

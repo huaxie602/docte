@@ -48,6 +48,23 @@ function normalizeBool(value) {
   return value === true
 }
 
+function normalizeText(value) {
+  return String(value === undefined || value === null ? '' : value).trim()
+}
+
+function normalizeFeedbackImages(images) {
+  if (!Array.isArray(images)) return []
+  return images
+    .map(item => {
+      if (typeof item === 'string') return item
+      if (!item || typeof item !== 'object') return ''
+      return item.fileID || item.fileId || item.cloudUrl || item.url || item.fileUrl || item.path || ''
+    })
+    .map(normalizeText)
+    .filter(Boolean)
+    .slice(0, 3)
+}
+
 function buildUserInfo(user = {}, id = '') {
   const userId = id || user._id || user.id || ''
   const phone = user.phone || ''
@@ -372,20 +389,24 @@ module.exports = {
     try {
       const user = await verifyUserToken(token)
       await checkRateLimit('feedback', user._id)
-      if (!['投诉', '建议'].includes(type)) return { code: -1, msg: '反馈类型不正确' }
-      if (!content || typeof content !== 'string') return { code: -1, msg: '反馈内容不能为空' }
-      await db.collection('cicada_feedbacks').add({
+      const feedbackType = normalizeText(type)
+      const feedbackContent = normalizeText(content)
+      const feedbackImages = normalizeFeedbackImages(images)
+      if (!['投诉', '建议'].includes(feedbackType)) return { code: -1, msg: '反馈类型不正确' }
+      if (!feedbackContent) return { code: -1, msg: '反馈内容不能为空' }
+      if (feedbackContent.length > 500) return { code: -1, msg: '反馈内容不能超过500字' }
+      const res = await db.collection('cicada_feedbacks').add({
         user_id: user._id,
-        type,
-        content,
-        images: Array.isArray(images) ? images : [],
-        contact_type,
-        contact_value,
-        rel_order_no,
+        type: feedbackType,
+        content: feedbackContent,
+        images: feedbackImages,
+        contact_type: normalizeText(contact_type).slice(0, 30),
+        contact_value: normalizeText(contact_value).slice(0, 80),
+        rel_order_no: normalizeText(rel_order_no).slice(0, 50),
         status: '待处理',
         create_time: Date.now()
       })
-      return { code: 0 }
+      return { code: 0, data: { id: res.id, ticketNo: res.id, images: feedbackImages } }
     } catch (e) {
       return { code: -1, msg: e.message }
     }

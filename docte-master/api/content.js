@@ -83,6 +83,8 @@ export const uploadImage = (filePath) => uploadToCloud(filePath, 'repair/images'
 
 export const uploadVideo = (filePath) => uploadToCloud(filePath, 'repair/videos', 'mp4')
 
+export const uploadFeedbackImage = (filePath) => uploadToCloud(filePath, 'feedback/images', 'jpg')
+
 export const getWarrantyPolicy = async () => {
 	const settings = await getPublicCloudObject().getSettings({ keys: ['warranty_policy'] }).then(unwrapCloudResult)
 	return settingDoc('保修政策', settings.warranty_policy)
@@ -219,11 +221,24 @@ export const deleteAddress = (addressId) => getUserCloudObject()
 	.manageAddress(withToken({ action: 'delete', address: { _id: addressId } }))
 	.then(unwrapCloudResult)
 
+const normalizeFeedbackImages = (images = []) => {
+	if (!Array.isArray(images)) return []
+	return images
+		.map((item) => {
+			if (typeof item === 'string') return item
+			if (!item || typeof item !== 'object') return ''
+			return item.fileID || item.fileId || item.cloudUrl || item.url || item.fileUrl || item.path || ''
+		})
+		.map((item) => String(item || '').trim())
+		.filter(Boolean)
+		.slice(0, 3)
+}
+
 export const addComplaint = (data = {}) => getUserCloudObject()
 	.submitFeedback(withToken({
 		type: data.type === 0 ? '投诉' : data.type === 1 ? '建议' : data.type,
 		content: data.content,
-		images: data.images || [],
+		images: normalizeFeedbackImages(data.images),
 		contact_type: data.contactType || data.contact_type || '',
 		contact_value: data.contact || data.contactValue || data.contact_value || '',
 		rel_order_no: data.orderId || data.rel_order_no || ''
