@@ -1,11 +1,19 @@
 const db = uniCloud.database()
 const dbCmd = db.command
+const {
+  ORDER_STATUS,
+  assertOrderStatusTransition,
+  assertRolePermission,
+  getWorkflowConfigForRole,
+  hasRolePermission,
+  isKnownRole
+} = require('../common/cicada-order-workflow')
 
 async function verifyAdminToken(token) {
   if (!token) throw new Error('鉴权失败：非管理人员禁止访问该接口')
   const res = await db.collection('cicada_users').where({ token }).limit(1).get()
   const user = res.data[0]
-  if (!user || user.disabled || !['admin', 'engineer'].includes(user.role)) {
+  if (!user || user.disabled || !isKnownRole(user.role)) {
     throw new Error('鉴权失败：非管理人员禁止访问该接口')
   }
   if (Date.now() > user.token_expire) throw new Error('鉴权失败：Token已过期')
@@ -27,7 +35,6 @@ function normalizePage(page, pageSize) {
   return { page: current, pageSize: size }
 }
 
-const ORDER_STATUS = ['pending', 'sent', 'received', 'inspecting', 'fixing', 'shipped', 'completed', 'cancelled']
 const SUBSCRIPTION_SCENE_LABELS = {
   repair_submitted: '报修已提交',
   order_received: '设备已签收',
@@ -158,6 +165,50 @@ async function sendOrderSubscription(order = {}, scene = '', remark = '') {
     await logSubscriptionMessage({ ...logBase, openid: user.openid, status: 'sent' })
   } catch (e) {
     await logSubscriptionMessage({ ...logBase, status: 'failed', fail_reason: e.message || String(e) })
+  }
+}
+
+function requireAdminPermission(ctx, action) {
+  const user = ctx.currentAdminUser || {}
+  assertRolePermission(user, action)
+  return user
+}
+
+function getActorInfo(user = {}) {
+  return {
+    actor_id: user._id || '',
+    actor_role: user.role || '',
+    actor_name: user.nickname || user.name || user.username || user.mobile || user.phone || ''
+  }
+}
+
+async function logOrderEvent({
+  order = {},
+  source = 'admin',
+  action = '',
+  actor = {},
+  before = {},
+  after = {}
+} = {}) {
+  if (!order._id && !order.order_no) return
+  await db.collection('cicada_order_events').add({
+    order_id: order._id || '',
+    order_no: order.order_no || '',
+    source,
+    action,
+    ...getActorInfo(actor),
+    before,
+    after,
+    create_time: Date.now()
+  }).catch(() => {})
+}
+
+function stripPaymentProofsIfForbidden(order = {}, user = {}) {
+  if (hasRolePermission(user.role, 'view_payment_proof')) return order
+  return {
+    ...order,
+    payment_proofs: [],
+    paymentProofs: []
   }
 }
 
@@ -657,12 +708,22 @@ module.exports = {
       const params = this.getParams()[0] || {}
       token = params.token
     }
-    await verifyAdminToken(token)
+    this.currentAdminUser = await verifyAdminToken(token)
+  },
+
+  async getWorkflowConfig(params) {
+    try {
+      const user = requireAdminPermission(this, 'get_workflow_config')
+      return { code: 0, data: getWorkflowConfigForRole(user.role) }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
   },
 
   // 获取后台工单列表（支持筛选/分页）
   async getAdminOrderList(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'view_order')
       let status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array'
       if (params && Object.keys(params).length) {
         ({ status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array' } = params)
@@ -692,7 +753,7 @@ module.exports = {
         const itemDetail = (order.itemsList && order.itemsList.length > 0) ? order.itemsList[0] : {}
         const orderWithProofs = await enrichPaymentProofs(order)
 
-        return {
+        return stripPaymentProofsIfForbidden({
           ...orderWithProofs,
           // 把详情里的字段平铺到最外层
           product_name: itemDetail.product_name || '',
@@ -704,7 +765,7 @@ module.exports = {
           fix_solution: itemDetail.fix_solution || '',
           // 保留原始的 itemsList 数组供前端使用
           itemsList: order.itemsList || []
-        }
+        }, currentAdmin)
       }))
 
       const filteredOrders = orders.filter(order => {
@@ -757,6 +818,7 @@ module.exports = {
   // 获取单条订单详情
   async getAdminOrderDetail(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'view_order')
       let order_id
       if (params && params.order_id) {
         ({ order_id } = params)
@@ -789,7 +851,7 @@ module.exports = {
       const itemDetail = (order.itemsList && order.itemsList.length > 0) ? order.itemsList[0] : {}
 
       const orderWithProofs = await enrichPaymentProofs(order)
-      const orderData = {
+      const orderData = stripPaymentProofsIfForbidden({
         ...orderWithProofs,
         product_name: itemDetail.product_name || '',
         product_model: itemDetail.product_model || '',
@@ -799,7 +861,7 @@ module.exports = {
         buy_date: itemDetail.buy_date || '',
         fix_solution: itemDetail.fix_solution || '',
         itemsList: order.itemsList || []
-      }
+      }, currentAdmin)
 
       return { code: 0, data: orderData }
     } catch (e) {
@@ -810,6 +872,7 @@ module.exports = {
   // 分配工程师
   async assignEngineer(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'manage_staff')
       let order_id, engineer_id
       if (params && params.order_id) {
         ({ order_id, engineer_id } = params)
@@ -822,11 +885,21 @@ module.exports = {
       }
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
       await verifyEngineer(engineer_id)
+      const found = await db.collection('cicada_orders').doc(order_id).get()
+      const order = found.data && found.data[0]
+      if (!order) return { code: -1, msg: '工单不存在' }
       const res = await db.collection('cicada_orders').doc(order_id).update({
         engineer_id,
         update_time: Date.now()
       })
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'assign_engineer',
+        actor: currentAdmin,
+        before: { engineer_id: order.engineer_id || '' },
+        after: { engineer_id }
+      })
       return { code: 0 }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -836,6 +909,7 @@ module.exports = {
   // 更新工单状态
   async updateOrderStatus(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'update_status')
       let order_id, status
       if (params && params.order_id) {
         ({ order_id, status } = params)
@@ -851,11 +925,19 @@ module.exports = {
       const found = await db.collection('cicada_orders').doc(order_id).get()
       const order = found.data && found.data[0]
       if (!order) return { code: -1, msg: '工单不存在' }
+      assertOrderStatusTransition(order.status, status)
       const res = await db.collection('cicada_orders').doc(order_id).update({
         status,
         update_time: Date.now()
       })
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'update_status',
+        actor: currentAdmin,
+        before: { status: order.status || '' },
+        after: { status }
+      })
       const sceneMap = {
         received: 'order_received',
         shipped: 'order_shipped',
@@ -873,6 +955,7 @@ module.exports = {
   // 批量导入物流单：inbound=客户寄入签收，return=后台回寄发货
   async batchImportLogistics(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'import_logistics')
       const { type = 'return', rows, importDate = '' } = pickParam(this, params)
       const importType = type === 'inbound' ? 'inbound' : 'return'
       const normalizedList = normalizeLogisticsImportRows(rows, importType)
@@ -933,6 +1016,14 @@ module.exports = {
         }
 
         const updateData = buildLogisticsImportUpdate(order, item, importType, now, importDate)
+        const targetStatus = importType === 'inbound' ? 'received' : 'shipped'
+        try {
+          assertOrderStatusTransition(order.status, targetStatus)
+        } catch (e) {
+          summary.fail += 1
+          summary.errors.push({ orderNo: item.orderNo, reason: e.message })
+          continue
+        }
         const res = await db.collection('cicada_orders').doc(order._id).update(updateData)
         if (!res.updated) {
           summary.fail += 1
@@ -940,6 +1031,22 @@ module.exports = {
           continue
         }
 
+        await logOrderEvent({
+          order,
+          action: importType === 'return' ? 'ship_return' : 'update_status',
+          actor: currentAdmin,
+          before: {
+            status: order.status || '',
+            ship_out_info: order.ship_out_info || {},
+            ship_back_info: order.ship_back_info || {}
+          },
+          after: {
+            status: updateData.status || order.status || '',
+            ship_out_info: updateData.ship_out_info || order.ship_out_info || {},
+            ship_back_info: updateData.ship_back_info || order.ship_back_info || {},
+            type: importType
+          }
+        })
         const notifyScene = importType === 'inbound' ? 'order_received' : 'order_shipped'
         await sendOrderSubscription({ ...order, ...updateData }, notifyScene, updateData.status === 'received' ? '设备已签收' : '设备已回寄')
         summary.success += 1
@@ -954,6 +1061,7 @@ module.exports = {
   // 批量导入回寄运单号，按工单号匹配并更新回寄物流信息
   async batchImportReturnLogistics(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'import_logistics')
       const { rows } = pickParam(this, params)
       const normalizedRows = normalizeImportRows(rows)
       if (!normalizedRows.length) {
@@ -1015,6 +1123,12 @@ module.exports = {
           ],
           update_time: now
         }
+        try {
+          assertOrderStatusTransition(order.status, updateData.status)
+        } catch (e) {
+          results.push({ ...item, success: false, reason: e.message })
+          continue
+        }
 
         const res = await db.collection('cicada_orders').doc(order._id).update(updateData)
         if (!res.updated) {
@@ -1022,6 +1136,19 @@ module.exports = {
           continue
         }
 
+        await logOrderEvent({
+          order,
+          action: 'ship_return',
+          actor: currentAdmin,
+          before: {
+            status: order.status || '',
+            ship_back_info: order.ship_back_info || {}
+          },
+          after: {
+            status: updateData.status,
+            ship_back_info: updateData.ship_back_info
+          }
+        })
         await sendOrderSubscription({ ...order, ...updateData }, 'order_shipped', '设备已回寄')
         results.push({
           ...item,
@@ -1050,6 +1177,7 @@ module.exports = {
   // 批量回寄发货，按工单编号更新回寄物流并将状态置为已发货
   async batchUpdateShipping(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'import_logistics')
       const { shippingList } = pickParam(this, params)
       const normalizedList = normalizeShippingList(shippingList)
       if (!normalizedList.length) {
@@ -1115,6 +1243,13 @@ module.exports = {
           ],
           update_time: now
         }
+        try {
+          assertOrderStatusTransition(order.status, updateData.status)
+        } catch (e) {
+          summary.fail += 1
+          summary.errors.push({ orderNo: item.orderNo, reason: e.message })
+          continue
+        }
 
         const res = await db.collection('cicada_orders').doc(order._id).update(updateData)
         if (!res.updated) {
@@ -1123,6 +1258,19 @@ module.exports = {
           continue
         }
 
+        await logOrderEvent({
+          order,
+          action: 'ship_return',
+          actor: currentAdmin,
+          before: {
+            status: order.status || '',
+            ship_back_info: order.ship_back_info || {}
+          },
+          after: {
+            status: updateData.status,
+            ship_back_info: updateData.ship_back_info
+          }
+        })
         await sendOrderSubscription({ ...order, ...updateData }, 'order_shipped', '设备已回寄')
         summary.success += 1
       }
@@ -1136,11 +1284,15 @@ module.exports = {
   // 更新工单备注：admin_remark 仅后台可见，print_remark 用于随件打印
   async updateRemarks(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'update_remarks')
       const { orderId, order_id, adminRemark, printRemark } = pickParam(this, params)
       const targetOrderId = order_id || orderId
       if (!targetOrderId) return { code: -1, msg: '缺少工单ID' }
 
       const now = Date.now()
+      const found = await db.collection('cicada_orders').doc(targetOrderId).get()
+      const order = found.data && found.data[0]
+      if (!order) return { code: -1, msg: '工单不存在' }
       const remarkData = {
         admin_remark: normalizeText(adminRemark),
         print_remark: normalizeText(printRemark),
@@ -1149,6 +1301,19 @@ module.exports = {
 
       const res = await db.collection('cicada_orders').doc(targetOrderId).update(remarkData)
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'update_remarks',
+        actor: currentAdmin,
+        before: {
+          admin_remark: order.admin_remark || '',
+          print_remark: order.print_remark || ''
+        },
+        after: {
+          admin_remark: remarkData.admin_remark,
+          print_remark: remarkData.print_remark
+        }
+      })
 
       return { code: 0, data: remarkData }
     } catch (e) {
@@ -1159,6 +1324,7 @@ module.exports = {
   // 内部开票状态登记；真实税控/财务系统开票需要后续对接第三方接口
   async updateInvoiceStatus(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'update_invoice')
       const { order_id, status, invoice = {} } = pickParam(this, params)
       const nextStatus = normalizeInvoiceStatusValue(status)
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
@@ -1184,6 +1350,13 @@ module.exports = {
         update_time: now
       })
       if (!res.updated) return { code: -1, msg: '工单更新失败' }
+      await logOrderEvent({
+        order,
+        action: 'update_invoice',
+        actor: currentAdmin,
+        before: { invoice_info: oldInvoice },
+        after: { invoice_info: invoiceInfo }
+      })
 
       return { code: 0, data: invoiceInfo }
     } catch (e) {
@@ -1194,6 +1367,7 @@ module.exports = {
   // 后台手动填写/发布维修报价
   async updateOrderQuote(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'issue_quote')
       const { order_id, quote = {} } = pickParam(this, params)
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
 
@@ -1226,6 +1400,21 @@ module.exports = {
 
       const res = await db.collection('cicada_orders').doc(order_id).update(updateData)
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'issue_quote',
+        actor: currentAdmin,
+        before: {
+          quote_status: order.quote_status || 'pending',
+          quote_items: order.quote_items || [],
+          total_price: Number(order.total_price || 0)
+        },
+        after: {
+          quote_status: quoteData.quote_status,
+          quote_items: quoteData.quote_items,
+          total_price: quoteData.total_price
+        }
+      })
 
       if (quoteData.quote_status === 'issued' && order.quote_status !== 'issued') {
         await sendOrderSubscription({ ...order, ...updateData }, 'quote_issued', '维修报价已发布')
@@ -1239,6 +1428,7 @@ module.exports = {
   // 后台核销客户付款凭证/到账状态
   async updatePaymentStatus(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'confirm_payment')
       const { order_id, status } = pickParam(this, params)
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
       const paymentStatus = normalizeText(status || 'paid')
@@ -1274,6 +1464,13 @@ module.exports = {
 
       const res = await db.collection('cicada_orders').doc(order_id).update(updateData)
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'confirm_payment',
+        actor: currentAdmin,
+        before: { payment_status: order.payment_status || 'pending' },
+        after: { payment_status: paymentStatus }
+      })
 
       if (paymentStatus === 'paid' && order.payment_status !== 'paid') {
         await sendOrderSubscription({ ...order, ...updateData }, 'payment_confirmed', '付款已确认')
@@ -1287,6 +1484,7 @@ module.exports = {
   // 追加工单时间线节点
   async addTimeline(params) {
     try {
+      const currentAdmin = requireAdminPermission(this, 'add_timeline')
       let order_id, title, desc
       if (params && params.order_id) {
         ({ order_id, title, desc } = params)
@@ -1299,11 +1497,22 @@ module.exports = {
       }
       if (!order_id) return { code: -1, msg: '缺少工单ID' }
       if (!title || typeof title !== 'string') return { code: -1, msg: '时间线标题不能为空' }
+      const found = await db.collection('cicada_orders').doc(order_id).get()
+      const order = found.data && found.data[0]
+      if (!order) return { code: -1, msg: '工单不存在' }
+      const timelineItem = { title, desc, time: Date.now(), done: true }
       const res = await db.collection('cicada_orders').doc(order_id).update({
-        timeline: dbCmd.push({ title, desc, time: Date.now(), done: true }),
+        timeline: dbCmd.push(timelineItem),
         update_time: Date.now()
       })
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'add_timeline',
+        actor: currentAdmin,
+        before: { timeline_count: Array.isArray(order.timeline) ? order.timeline.length : 0 },
+        after: { timeline: timelineItem }
+      })
       return { code: 0 }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -1313,6 +1522,7 @@ module.exports = {
   // 获取统计数据
   async getStatistics(params) {
     try {
+      requireAdminPermission(this, 'get_stats')
       const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime()
 
       const [pendingRes, todayRes] = await Promise.all([
@@ -1337,6 +1547,7 @@ module.exports = {
   // 获取后台待办中心分组统计
   async getTodoSummary(params) {
     try {
+      requireAdminPermission(this, 'get_stats')
       const orders = await fetchOrderBatches({ status: dbCmd.neq('cancelled') })
       const groups = [
         { key: 'inbound', title: '待签收', desc: '客户已提交或运输中的工单', count: 0 },
@@ -1373,6 +1584,7 @@ module.exports = {
   // 获取服务数据总结
   async getDashboardSummary(params) {
     try {
+      requireAdminPermission(this, 'get_stats')
       const { startDate = '', endDate = '', granularity = 'day' } = pickParam(this, params)
       const { startTime, endTime } = normalizeDashboardRange(startDate, endDate)
       const normalizedGranularity = granularity === 'week' ? 'week' : 'day'

@@ -51,6 +51,8 @@
         <el-select v-model="userForm.role" style="width:100%;">
           <el-option label="管理员" value="管理员"></el-option>
           <el-option label="工程师" value="工程师"></el-option>
+          <el-option label="财务" value="财务"></el-option>
+          <el-option label="客服" value="客服"></el-option>
         </el-select>
       </el-form-item>
     </el-form>
@@ -71,11 +73,15 @@ const loading = ref(false)
 
 const roleMap = {
   admin: '管理员',
-  engineer: '工程师'
+  engineer: '工程师',
+  finance: '财务',
+  support: '客服'
 }
 const roleMapReverse = {
   管理员: 'admin',
-  工程师: 'engineer'
+  工程师: 'engineer',
+  财务: 'finance',
+  客服: 'support'
 }
 
 const userDialogVisible = ref(false)

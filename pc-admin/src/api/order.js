@@ -16,6 +16,11 @@ export const getOrderList = (token, status, page = 1, pageSize = 20, filters = {
   })
 }
 
+// 获取当前角色可用工单流程与权限
+export const getWorkflowConfig = (token) => {
+  return request.post(`${API_BASE.adminOrder}/getWorkflowConfig`, { token })
+}
+
 // 分配工程师
 export const assignEngineer = (token, orderId, engineerId) => {
   return request.post(`${API_BASE.adminOrder}/assignEngineer`, {

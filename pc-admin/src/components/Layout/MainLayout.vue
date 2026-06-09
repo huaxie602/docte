@@ -96,7 +96,7 @@ const menuTitles = {
   summary: '运营汇总看板'
 }
 
-const roleMap = { admin: '管理员', engineer: '工程师' }
+const roleMap = { admin: '管理员', engineer: '工程师', finance: '财务', support: '客服' }
 const getMenuFromPath = () => route.path.replace(/^\//, '') || 'home'
 const activeMenu = ref(getMenuFromPath())
 

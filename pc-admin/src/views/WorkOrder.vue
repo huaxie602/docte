@@ -51,21 +51,21 @@
         ></el-date-picker>
         <el-button plain class="top-btn-text" @click="downloadImportTemplate('inbound')"><el-icon><Document /></el-icon> 签收模板</el-button>
         <el-button plain class="top-btn-text" @click="downloadImportTemplate('return')"><el-icon><Document /></el-icon> 回寄模板</el-button>
-        <el-button type="success" plain class="top-btn-text" :loading="importing" @click="openImportDialog('inbound')">
+        <el-button type="success" plain class="top-btn-text" :disabled="!canPerformOrderAction('import_logistics')" :loading="importing" @click="openImportDialog('inbound')">
           <el-icon><Upload /></el-icon> 导入签收单
         </el-button>
-        <el-button type="primary" plain class="top-btn-text" :loading="importing" @click="openImportDialog('return')">
+        <el-button type="primary" plain class="top-btn-text" :disabled="!canPerformOrderAction('import_logistics')" :loading="importing" @click="openImportDialog('return')">
           <el-icon><Upload /></el-icon> 导入回寄单
         </el-button>
         <el-button plain class="top-btn-text" :disabled="!selectedOrders.length" @click="handleConfiguredBatchPrint"><el-icon><Printer /></el-icon> 批量打印</el-button>
-        <el-dropdown trigger="click" :disabled="!selectedOrders.length || batchCompleting" @command="handleBatchStatusCommand">
-          <el-button type="warning" plain class="top-btn-text" :disabled="!selectedOrders.length" :loading="batchCompleting">
+        <el-dropdown trigger="click" :disabled="!selectedOrders.length || !hasBatchStatusOptions || batchCompleting" @command="handleBatchStatusCommand">
+          <el-button type="warning" plain class="top-btn-text" :disabled="!selectedOrders.length || !hasBatchStatusOptions" :loading="batchCompleting">
             <el-icon><CircleCheck /></el-icon> 批量状态 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="processing">标记处理中</el-dropdown-item>
-              <el-dropdown-item command="completed" divided>批量结单</el-dropdown-item>
+              <el-dropdown-item v-if="getTransitionableOrders('处理中').length" command="processing">标记处理中</el-dropdown-item>
+              <el-dropdown-item v-if="getTransitionableOrders('已完成').length" command="completed" divided>批量结单</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -120,7 +120,7 @@
 
         <el-table-column label="处理状态" width="130">
           <template #default="{row}">
-            <el-dropdown trigger="click" @command="status => handleQuickStatusChange(row, status)">
+            <el-dropdown trigger="click" :disabled="!getAllowedStatusOptions(row).length" @command="status => handleQuickStatusChange(row, status)">
               <span class="status-dropdown-trigger">
                 <el-tag
                   :class="'status-tag status-' + row.status"
@@ -128,12 +128,12 @@
                   effect="light"
                   round
                   size="small">
-                  {{ row.status }} <span class="status-dropdown-caret">▾</span>
+                  {{ row.status }} <span v-if="getAllowedStatusOptions(row).length" class="status-dropdown-caret">▾</span>
                 </el-tag>
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-for="status in adminActionStatusOptions" :key="status" :command="status">{{ status }}</el-dropdown-item>
+                  <el-dropdown-item v-for="status in getAllowedStatusOptions(row)" :key="status" :command="status">{{ status }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -158,7 +158,7 @@
           <template #default="{row}">
             <div class="operation-actions">
               <el-button type="primary" link @click="openDrawer(row)">处理</el-button>
-              <el-tooltip :content="getRemarkTooltip(row)" placement="top">
+              <el-tooltip v-if="canPerformOrderAction('update_remarks')" :content="getRemarkTooltip(row)" placement="top">
                 <el-button
                   type="primary"
                   link
@@ -338,23 +338,24 @@
               </div>
               <div class="quote-item-list">
                 <div v-for="(item, index) in quoteForm.items" :key="item.localId" class="quote-item-editor">
-                  <el-input v-model="item.name" placeholder="维修项目，如更换轴承/检测清洁"></el-input>
-                  <el-input v-model="item.desc" placeholder="项目说明，可选"></el-input>
+                  <el-input v-model="item.name" :disabled="!canPerformOrderAction('issue_quote')" placeholder="维修项目，如更换轴承/检测清洁"></el-input>
+                  <el-input v-model="item.desc" :disabled="!canPerformOrderAction('issue_quote')" placeholder="项目说明，可选"></el-input>
                   <div class="quote-fee-row">
-                    <el-input-number v-model="item.partsFee" :min="0" :precision="2" :step="10" controls-position="right" placeholder="配件费"></el-input-number>
-                    <el-input-number v-model="item.laborFee" :min="0" :precision="2" :step="10" controls-position="right" placeholder="工时费"></el-input-number>
-                    <el-button type="danger" link :disabled="quoteForm.items.length <= 1" @click="removeQuoteItem(index)">删除</el-button>
+                    <el-input-number v-model="item.partsFee" :disabled="!canPerformOrderAction('issue_quote')" :min="0" :precision="2" :step="10" controls-position="right" placeholder="配件费"></el-input-number>
+                    <el-input-number v-model="item.laborFee" :disabled="!canPerformOrderAction('issue_quote')" :min="0" :precision="2" :step="10" controls-position="right" placeholder="工时费"></el-input-number>
+                    <el-button type="danger" link :disabled="!canPerformOrderAction('issue_quote') || quoteForm.items.length <= 1" @click="removeQuoteItem(index)">删除</el-button>
                   </div>
                 </div>
               </div>
-              <el-button type="primary" plain size="small" @click="addQuoteItem">添加费用项</el-button>
+              <el-button v-if="canPerformOrderAction('issue_quote')" type="primary" plain size="small" @click="addQuoteItem">添加费用项</el-button>
               <el-input
                 v-model="quoteForm.remark"
+                :disabled="!canPerformOrderAction('issue_quote')"
                 type="textarea"
                 :rows="2"
                 placeholder="报价备注（客户可见，可填写付款说明或费用说明）"
               ></el-input>
-              <div class="quote-actions">
+              <div v-if="canPerformOrderAction('issue_quote')" class="quote-actions">
                 <el-button :loading="quoteSaving" @click="saveOrderQuote('draft')">保存草稿</el-button>
                 <el-button type="primary" :loading="quoteSaving" @click="saveOrderQuote('issued')">发布报价</el-button>
               </div>
@@ -379,7 +380,7 @@
                   <strong>{{ getPaymentStatusText(currentOrder) }}</strong>
                 </div>
               </div>
-              <div v-if="currentOrder.paymentProofs && currentOrder.paymentProofs.length" class="payment-proof-list">
+              <div v-if="canPerformOrderAction('view_payment_proof') && currentOrder.paymentProofs && currentOrder.paymentProofs.length" class="payment-proof-list">
                 <div v-for="(proof, index) in currentOrder.paymentProofs" :key="proof.id || proof.url || proof.fileID || index" class="payment-proof-card">
                   <el-image
                     v-if="isPreviewableProof(proof)"
@@ -397,10 +398,11 @@
                   </div>
                 </div>
               </div>
-              <p v-else class="empty-text">客户还未上传付款凭证。</p>
+              <p v-else-if="canPerformOrderAction('view_payment_proof')" class="empty-text">客户还未上传付款凭证。</p>
+              <p v-else class="empty-text">当前角色不可查看付款凭证。</p>
               <div class="payment-actions">
                 <el-button
-                  v-if="resolvePaymentStatus(currentOrder) === 'uploaded'"
+                  v-if="resolvePaymentStatus(currentOrder) === 'uploaded' && canPerformOrderAction('confirm_payment')"
                   type="success"
                   size="small"
                   :loading="paymentSaving"
@@ -423,23 +425,23 @@
               <p class="drawer-section-title">发票登记</p>
               <el-form label-width="86px" size="small">
                 <el-form-item label="发票状态">
-                  <el-select v-model="invoiceStatus" style="width:100%;">
+                  <el-select v-model="invoiceStatus" :disabled="!canPerformOrderAction('update_invoice')" style="width:100%;">
                     <el-option label="无需开票" value="无需开票"></el-option>
                     <el-option label="未发票" value="未发票"></el-option>
                     <el-option label="已发票" value="已发票"></el-option>
                   </el-select>
                 </el-form-item>
                 <el-form-item label="发票抬头">
-                  <el-input v-model="invoiceForm.title" placeholder="请输入发票抬头"></el-input>
+                  <el-input v-model="invoiceForm.title" :disabled="!canPerformOrderAction('update_invoice')" placeholder="请输入发票抬头"></el-input>
                 </el-form-item>
                 <el-form-item label="企业税号">
-                  <el-input v-model="invoiceForm.taxNo" placeholder="请输入企业税号"></el-input>
+                  <el-input v-model="invoiceForm.taxNo" :disabled="!canPerformOrderAction('update_invoice')" placeholder="请输入企业税号"></el-input>
                 </el-form-item>
                 <el-form-item label="备注">
-                  <el-input v-model="invoiceForm.remark" placeholder="电子票号/财务备注"></el-input>
+                  <el-input v-model="invoiceForm.remark" :disabled="!canPerformOrderAction('update_invoice')" placeholder="电子票号/财务备注"></el-input>
                 </el-form-item>
               </el-form>
-              <el-button type="primary" plain size="small" @click="saveInvoiceStatus">保存发票状态</el-button>
+              <el-button v-if="canPerformOrderAction('update_invoice')" type="primary" plain size="small" @click="saveInvoiceStatus">保存发票状态</el-button>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -447,16 +449,17 @@
     </template>
     <template #footer>
       <div class="drawer-footer">
-        <div class="drawer-status-box">
+        <div v-if="canPerformOrderAction('update_status')" class="drawer-status-box">
           <span class="drawer-status-title">更改工单进度</span>
-          <el-radio-group v-model="newStatus">
-            <el-radio v-for="status in adminActionStatusOptions" :key="status" :label="status">{{ status }}</el-radio>
+          <el-radio-group v-if="getAllowedStatusOptions(currentOrder).length" v-model="newStatus">
+            <el-radio v-for="status in getAllowedStatusOptions(currentOrder)" :key="status" :label="status">{{ status }}</el-radio>
           </el-radio-group>
+          <span v-else class="empty-text">当前状态暂无可执行的下一步。</span>
         </div>
         <div class="drawer-footer-actions">
           <el-button @click="printConfiguredOrder" plain><el-icon><Printer /></el-icon> 打印</el-button>
           <el-button @click="drawerVisible=false">关闭</el-button>
-          <el-button type="primary" :loading="quickStatusLoading" @click="confirmStatus">保存</el-button>
+          <el-button v-if="canPerformOrderAction('update_status') && getAllowedStatusOptions(currentOrder).length" type="primary" :loading="quickStatusLoading" @click="confirmStatus">保存</el-button>
         </div>
       </div>
     </template>
@@ -644,7 +647,7 @@
 import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { batchImportLogistics, batchUpdateShipping, getOrderList, updateInvoiceStatus, updateOrderQuote, updateOrderStatus, updatePaymentStatus, updateRemarks } from '../api/order.js'
+import { batchImportLogistics, batchUpdateShipping, getOrderList, getWorkflowConfig, updateInvoiceStatus, updateOrderQuote, updateOrderStatus, updatePaymentStatus, updateRemarks } from '../api/order.js'
 import { getSettings } from '../api/admin.js'
 import { exportOrdersToWorkbook, formatOrderAttachments, formatOrderItems } from '../utils/orderExport.js'
 import { transformOrders } from '../utils/orderTransform.js'
@@ -815,6 +818,7 @@ const orders = ref([])
 const totalOrders = ref(0)
 const deviceModelOptions = ref([])
 const selectedOrders = ref([])
+const workflowConfig = ref(null)
 const isPrinting = ref(false)
 const printTime = ref('')
 const printConfig = ref(parsePrintConfig())
@@ -835,6 +839,40 @@ const logisticsImportTip = computed(() => {
   return activeLogisticsImportType.value === 'inbound'
     ? '签收单用于客户寄入设备：请填写工单编号、物流公司、物流单号、签收时间，导入后状态更新为已签收。'
     : '回寄单用于后台发货：请填写工单编号、物流公司、物流单号、发货时间，导入后状态更新为已回寄。'
+})
+
+const loadWorkflowConfig = async () => {
+  const token = localStorage.getItem('adminToken')
+  workflowConfig.value = await getWorkflowConfig(token)
+}
+
+const canPerformOrderAction = (action) => {
+  return Boolean(workflowConfig.value && workflowConfig.value.permissions && workflowConfig.value.permissions[action])
+}
+
+const getOrderStatusValue = (order = {}) => {
+  return order.statusEn || toEnglishStatus(order.status || '')
+}
+
+const getAllowedStatusOptions = (order = {}) => {
+  if (!order || !canPerformOrderAction('update_status')) return []
+  const currentStatus = getOrderStatusValue(order)
+  const transitions = (workflowConfig.value && workflowConfig.value.transitions && workflowConfig.value.transitions[currentStatus]) || []
+  return adminActionStatusOptions.filter(status => {
+    const targetStatus = toEnglishStatus(status)
+    return targetStatus !== currentStatus && transitions.includes(targetStatus)
+  })
+}
+
+const canMoveOrderToStatus = (order, status) => getAllowedStatusOptions(order).includes(status)
+
+const getTransitionableOrders = (status, source = selectedOrders.value) => {
+  return source.filter(order => order.status !== status && canMoveOrderToStatus(order, status))
+}
+
+const hasBatchStatusOptions = computed(() => {
+  return canPerformOrderAction('update_status') &&
+    selectedOrders.value.some(order => canMoveOrderToStatus(order, '处理中') || canMoveOrderToStatus(order, '已完成'))
 })
 
 const loadOrders = async () => {
@@ -913,9 +951,14 @@ const clearTodoFilter = () => {
   activeTodoType.value = ''
 }
 
-onMounted(() => {
+onMounted(async () => {
   applyRouteFilters()
   loadPrintConfig()
+  try {
+    await loadWorkflowConfig()
+  } catch (error) {
+    ElMessage.error(error.message || '工单权限配置加载失败')
+  }
   loadOrders()
 })
 
@@ -1053,7 +1096,7 @@ const openExportDialog = () => {
 
 const openDrawer = (row) => {
   currentOrder.value = row
-  newStatus.value = row.status
+  newStatus.value = getAllowedStatusOptions(row)[0] || row.status
   invoiceStatus.value = normalizeInvoiceStatus(row)
   invoiceForm.title = row.invoiceTitle || ''
   invoiceForm.taxNo = row.taxId || ''
@@ -1092,6 +1135,10 @@ const getRemarkTooltip = (row) => {
 }
 
 const openRemarkDialog = (row) => {
+  if (!canPerformOrderAction('update_remarks')) {
+    ElMessage.error('当前角色无权编辑备注')
+    return
+  }
   currentRemarkOrder.value = row
   quickRemarkForm.adminRemark = row.adminRemark || ''
   quickRemarkForm.printRemark = row.printRemark || ''
@@ -1126,13 +1173,32 @@ const formatOrderIdList = (list = []) => {
   return ids.length > 6 ? `${visible} 等 ${ids.length} 单` : visible
 }
 
+const buildBatchConfirmMessage = (actionText, targetOrders = [], skippedOrders = [], extraText = '') => {
+  const parts = [
+    `本次将${actionText} ${targetOrders.length} 单`,
+    `跳过 ${skippedOrders.length} 单`
+  ]
+  if (targetOrders.length) parts.push(`执行工单：${formatOrderIdList(targetOrders)}`)
+  if (skippedOrders.length) parts.push(`跳过工单：${formatOrderIdList(skippedOrders)}`)
+  if (extraText) parts.push(extraText)
+  return parts.join('。')
+}
+
 const handleQuickStatusChange = async (row, status) => {
   if (!row || !status || row.status === status) {
     ElMessage.info('当前工单已是该状态')
     return false
   }
+  if (!canMoveOrderToStatus(row, status)) {
+    ElMessage.error('当前角色或工单状态不允许执行该操作')
+    return false
+  }
 
   if (status === '已回寄') {
+    if (!canPerformOrderAction('import_logistics')) {
+      ElMessage.error('当前角色无权导入回寄物流')
+      return false
+    }
     currentQuickOrder.value = row
     quickShipForm.returnCompany = row.returnCompany || '顺丰速运'
     quickShipForm.returnNo = row.returnNo || ''
@@ -1211,29 +1277,22 @@ const handleBatchProcessing = async () => {
     ElMessage.warning('请先勾选要处理的工单')
     return
   }
-
-  const invalidOrders = selectedOrders.value.filter(order => ['已回寄', '已完成'].includes(order.status))
-  if (invalidOrders.length) {
-    await ElMessageBox.alert(
-      `以下工单已进入回寄或完成阶段，不能批量回退为处理中：${formatOrderIdList(invalidOrders)}`,
-      '批量标记处理中失败',
-      {
-        confirmButtonText: '知道了',
-        type: 'warning'
-      }
-    ).catch(() => {})
+  if (!canPerformOrderAction('update_status')) {
+    ElMessage.error('当前角色无权批量修改工单状态')
     return
   }
 
-  const targetOrders = selectedOrders.value.filter(order => order.status !== '处理中')
+  const targetOrders = getTransitionableOrders('处理中')
+  const skippedOrders = selectedOrders.value.filter(order => !targetOrders.some(item => item._id === order._id))
+
   if (!targetOrders.length) {
-    ElMessage.info('选中的工单已全部是处理中')
+    ElMessage.info('选中的工单没有可标记为处理中的项目')
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定将选中的 ${targetOrders.length} 个工单批量标记为【处理中】吗？涉及工单：${formatOrderIdList(targetOrders)}`,
+      buildBatchConfirmMessage('标记为【处理中】', targetOrders, skippedOrders),
       '批量状态变更确认',
       {
         confirmButtonText: '确定',
@@ -1270,25 +1329,24 @@ const handleBatchComplete = async () => {
     ElMessage.warning('请先勾选要结单的工单')
     return
   }
-
-  const invalidShippingOrders = selectedOrders.value.filter(order => order.status !== '已回寄' || !order.returnNo)
-  if (invalidShippingOrders.length) {
-    await ElMessageBox.alert(
-      `以下工单尚未完成回寄发货，不能批量结单：${formatOrderIdList(invalidShippingOrders)}`,
-      '批量结单校验失败',
-      {
-        confirmButtonText: '知道了',
-        type: 'warning'
-      }
-    ).catch(() => {})
+  if (!canPerformOrderAction('update_status')) {
+    ElMessage.error('当前角色无权批量修改工单状态')
     return
   }
 
-  const pendingInvoiceOrders = selectedOrders.value.filter(order => order.needInvoice === true && normalizeInvoiceStatus(order) !== '已发票')
-  const orderListText = formatOrderIdList(selectedOrders.value)
+  const transitionableOrders = getTransitionableOrders('已完成')
+  const targetOrders = transitionableOrders.filter(order => order.status === '已回寄' && order.returnNo)
+  const skippedOrders = selectedOrders.value.filter(order => !targetOrders.some(item => item._id === order._id))
+  if (!targetOrders.length) {
+    ElMessage.info('选中的工单没有可结单的项目')
+    return
+  }
+
+  const pendingInvoiceOrders = targetOrders.filter(order => order.needInvoice === true && normalizeInvoiceStatus(order) !== '已发票')
+  const invoiceText = pendingInvoiceOrders.length ? `其中 ${pendingInvoiceOrders.length} 单需要发票但尚未标记为已发票，确认后会强制结单` : ''
   const confirmMessage = pendingInvoiceOrders.length
-    ? `本次将批量标记 ${selectedOrders.value.length} 个工单为【已完成】。涉及工单：${orderListText}。其中 ${pendingInvoiceOrders.length} 个工单需要发票但尚未标记为已发票，确定强制结单吗？`
-    : `确定将选中的 ${selectedOrders.value.length} 个工单批量标记为【已完成】吗？涉及工单：${orderListText}`
+    ? buildBatchConfirmMessage('标记为【已完成】', targetOrders, skippedOrders, invoiceText)
+    : buildBatchConfirmMessage('标记为【已完成】', targetOrders, skippedOrders)
 
   try {
     await ElMessageBox.confirm(
@@ -1305,13 +1363,13 @@ const handleBatchComplete = async () => {
     const token = localStorage.getItem('adminToken')
     const statusEn = toEnglishStatus('已完成')
     const results = await Promise.allSettled(
-      selectedOrders.value.map(order => updateOrderStatus(token, order._id, statusEn))
+      targetOrders.map(order => updateOrderStatus(token, order._id, statusEn))
     )
     const failed = results.filter(item => item.status === 'rejected')
     if (failed.length) {
       ElMessage.error(`批量结单完成，失败 ${failed.length} 单`)
     } else {
-      ElMessage.success(`已批量结单 ${selectedOrders.value.length} 单`)
+      ElMessage.success(`已批量结单 ${targetOrders.length} 单`)
     }
     selectedOrders.value = []
     await loadOrders()
@@ -1326,6 +1384,10 @@ const handleBatchComplete = async () => {
 
 const confirmQuickShip = async () => {
   if (!currentQuickOrder.value) return
+  if (!canPerformOrderAction('import_logistics') || !canMoveOrderToStatus(currentQuickOrder.value, '已回寄')) {
+    ElMessage.error('当前角色或工单状态不允许回寄发货')
+    return
+  }
   const returnCompany = quickShipForm.returnCompany.trim()
   const returnNo = quickShipForm.returnNo.trim()
   if (!returnCompany) {
@@ -1362,6 +1424,10 @@ const confirmQuickShip = async () => {
 
 const confirmStatus = async () => {
   if (!currentOrder.value) return
+  if (!canMoveOrderToStatus(currentOrder.value, newStatus.value)) {
+    ElMessage.error('当前状态不允许执行该操作')
+    return
+  }
   const changed = await handleQuickStatusChange(currentOrder.value, newStatus.value)
   if (changed) {
     drawerVisible.value = false
@@ -1370,6 +1436,10 @@ const confirmStatus = async () => {
 
 const saveInvoiceStatus = async () => {
   if (!currentOrder.value) return
+  if (!canPerformOrderAction('update_invoice')) {
+    ElMessage.error('当前角色无权更新发票状态')
+    return
+  }
   loading.value = true
   try {
     const token = localStorage.getItem('adminToken')
@@ -1393,6 +1463,10 @@ const saveInvoiceStatus = async () => {
 
 const saveOrderQuote = async (status = 'draft') => {
   if (!currentOrder.value) return
+  if (!canPerformOrderAction('issue_quote')) {
+    ElMessage.error('当前角色无权编辑维修报价')
+    return
+  }
   const payload = buildQuotePayload(status)
   const total = payload.items.reduce((sum, item) => sum + (Number(item.partsFee) || 0) + (Number(item.laborFee) || 0), 0)
 
@@ -1442,6 +1516,10 @@ const saveOrderQuote = async (status = 'draft') => {
 
 const markPaymentPaid = async () => {
   if (!currentOrder.value) return
+  if (!canPerformOrderAction('confirm_payment')) {
+    ElMessage.error('当前角色无权核销付款')
+    return
+  }
   if (resolvePaymentStatus(currentOrder.value) !== 'uploaded') {
     ElMessage.info('当前没有待核销的付款凭证')
     return
@@ -1489,6 +1567,10 @@ const markPaymentPaid = async () => {
 
 const saveRemarks = async () => {
   if (!currentOrder.value) return
+  if (!canPerformOrderAction('update_remarks')) {
+    ElMessage.error('当前角色无权编辑备注')
+    return
+  }
   remarkSaving.value = true
   try {
     const token = localStorage.getItem('adminToken')
@@ -1514,6 +1596,10 @@ const saveRemarks = async () => {
 
 const confirmSaveRemark = async () => {
   if (!currentRemarkOrder.value) return
+  if (!canPerformOrderAction('update_remarks')) {
+    ElMessage.error('当前角色无权编辑备注')
+    return
+  }
   quickStatusLoading.value = true
   try {
     const token = localStorage.getItem('adminToken')
@@ -1594,6 +1680,10 @@ const handleConfiguredBatchPrint = () => {
 }
 
 const openImportDialog = (type = 'return') => {
+  if (!canPerformOrderAction('import_logistics')) {
+    ElMessage.error('当前角色无权导入物流')
+    return
+  }
   activeLogisticsImportType.value = type
   importResult.value = null
   importDialogVisible.value = true
@@ -1604,6 +1694,10 @@ const downloadImportTemplate = (type = 'return') => {
 }
 
 const handleImportFile = async (uploadFile) => {
+  if (!canPerformOrderAction('import_logistics')) {
+    ElMessage.error('当前角色无权导入物流')
+    return
+  }
   const file = uploadFile.raw
   if (!file) return
 

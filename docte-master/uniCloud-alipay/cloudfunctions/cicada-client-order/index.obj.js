@@ -1,5 +1,6 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
+const { assertOrderStatusTransition } = require('../common/cicada-order-workflow')
 
 const CREATE_ORDER_LIMIT = { windowMs: 60 * 1000, max: 8 }
 const WECHAT_PAY_API_BASE = 'https://api.mch.weixin.qq.com'
@@ -115,6 +116,35 @@ async function sendOrderSubscription(order = {}, scene = '', remark = '') {
   } catch (e) {
     await logSubscriptionMessage({ ...logBase, status: 'failed', fail_reason: e.message || String(e) })
   }
+}
+
+function getActorInfo(user = {}) {
+  return {
+    actor_id: user._id || user.user_id || '',
+    actor_role: user.role || 'user',
+    actor_name: user.nickname || user.name || user.username || user.mobile || user.phone || ''
+  }
+}
+
+async function logOrderEvent({
+  order = {},
+  source = 'client',
+  action = '',
+  actor = {},
+  before = {},
+  after = {}
+} = {}) {
+  if (!order._id && !order.order_no) return
+  await db.collection('cicada_order_events').add({
+    order_id: order._id || '',
+    order_no: order.order_no || '',
+    source,
+    action,
+    ...getActorInfo(actor),
+    before,
+    after,
+    create_time: Date.now()
+  }).catch(() => {})
 }
 
 function normalizePrivateKey(value = '') {
@@ -565,7 +595,14 @@ function buildPaidTimeline(order = {}, now = Date.now(), amountFen = 0) {
   ]
 }
 
+function assertOrderPayable(order = {}) {
+  if (order.status === 'cancelled') throw new Error('已取消工单不可付款')
+  if (order.status === 'completed') throw new Error('已完成工单不可付款')
+  return true
+}
+
 async function markOrderWechatPaid(order = {}, transaction = {}) {
+  assertOrderPayable(order)
   const now = Date.now()
   const amountFen = Number(transaction.amount && transaction.amount.total) || getOrderPayAmountFen(order)
   const updateData = {
@@ -581,10 +618,27 @@ async function markOrderWechatPaid(order = {}, transaction = {}) {
   }
 
   if (!['shipped', 'completed', 'cancelled'].includes(order.status)) {
+    assertOrderStatusTransition(order.status, 'fixing')
     updateData.status = 'fixing'
   }
 
   await db.collection('cicada_orders').doc(order._id).update(updateData)
+  await logOrderEvent({
+    order,
+    source: 'wechat_pay',
+    action: 'wechat_pay_confirmed',
+    actor: { _id: order.user_id || '', role: 'user' },
+    before: {
+      status: order.status || '',
+      payment_status: order.payment_status || 'pending'
+    },
+    after: {
+      status: updateData.status || order.status || '',
+      payment_status: updateData.payment_status,
+      payment_method: updateData.payment_method,
+      amount_fen: amountFen
+    }
+  })
   await sendOrderSubscription({ ...order, ...updateData }, 'payment_confirmed', '微信支付已完成')
   return updateData
 }
@@ -693,6 +747,18 @@ module.exports = {
         return db.collection('cicada_order_items').add({ ...data, order_id: orderId })
       }))
 
+      await logOrderEvent({
+        order: { ...newOrder, _id: orderId },
+        action: 'create_order',
+        actor: user,
+        before: {},
+        after: {
+          status: newOrder.status,
+          item_count: items.length,
+          ship_out_info,
+          ship_back_info
+        }
+      })
       await sendOrderSubscription({ ...newOrder, _id: orderId }, 'repair_submitted', '报修申请已提交')
       return { code: 0, msg: '提交成功', data: { order_id: orderId, order_no } }
     } catch (e) {
@@ -804,6 +870,20 @@ module.exports = {
       }
 
       await db.collection('cicada_orders').doc(order._id).update(updateData)
+      await logOrderEvent({
+        order,
+        action: 'confirm_quote',
+        actor: user,
+        before: {
+          quote_status: order.quote_status || 'pending',
+          authorization_status: order.authorization_status || ''
+        },
+        after: {
+          quote_status: updateData.quote_status,
+          authorization_status: updateData.authorization_status,
+          total_price: Number(order.total_price || 0)
+        }
+      })
       return { code: 0, data: { ...updateData, ...exposeQuoteFields({ ...order, ...updateData }) } }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -816,6 +896,7 @@ module.exports = {
       const user = await verifyUserToken(token)
       const order = await findOwnedOrder(user._id, order_id)
       if (!order) return { code: -1, msg: '工单不存在或无权限' }
+      assertOrderPayable(order)
       if (!user.openid) return { code: -1, msg: '当前用户缺少微信 openid，请重新登录后再支付' }
       if (!['issued', 'confirmed'].includes(order.quote_status)) {
         return { code: -1, msg: '当前工单暂无可支付报价' }
@@ -925,6 +1006,7 @@ module.exports = {
       if (order.payment_status === 'paid') {
         return { code: 0, data: { ...exposeQuoteFields(order), status: order.status || 'fixing' } }
       }
+      assertOrderPayable(order)
 
       const outTradeNo = normalizeOutTradeNo(out_trade_no || order.wechat_pay_out_trade_no)
       const data = await confirmWechatPaySuccess(outTradeNo, order)
@@ -955,6 +1037,7 @@ module.exports = {
       const user = await verifyUserToken(token)
       const order = await findOwnedOrder(user._id, order_id)
       if (!order) return { code: -1, msg: '工单不存在或无权限' }
+      assertOrderPayable(order)
       if (!Number(order.total_price || 0)) return { code: -1, msg: '当前工单暂无待支付金额' }
 
       const now = Date.now()
@@ -1006,6 +1089,20 @@ module.exports = {
       }
 
       await db.collection('cicada_orders').doc(order._id).update(updateData)
+      await logOrderEvent({
+        order,
+        action: 'upload_payment_proof',
+        actor: user,
+        before: {
+          payment_status: order.payment_status || 'pending',
+          payment_proof_count: proofs.length
+        },
+        after: {
+          payment_status: updateData.payment_status,
+          payment_method: updateData.payment_method,
+          payment_proof_count: updateData.payment_proofs.length
+        }
+      })
       return { code: 0, data: { ...updateData, ...exposeQuoteFields({ ...order, ...updateData }) } }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -1080,6 +1177,13 @@ module.exports = {
 
       const res = await db.collection('cicada_orders').doc(order._id).update(updateData)
       if (!res.updated) return { code: -1, msg: '工单不存在' }
+      await logOrderEvent({
+        order,
+        action: 'apply_invoice',
+        actor: user,
+        before: { invoice_info: oldInvoice },
+        after: { invoice_info: invoiceInfo }
+      })
 
       return { code: 0, data: invoiceInfo }
     } catch (e) {
@@ -1095,14 +1199,27 @@ module.exports = {
       const found = await db.collection('cicada_orders')
         .where({ _id: order_id, user_id: user._id }).limit(1).get()
       if (!found.data.length) return { code: -1, msg: '工单不存在或无权限' }
-      if (!['pending', 'received'].includes(found.data[0].status)) {
+      const order = found.data[0]
+      if (!['pending', 'received'].includes(order.status)) {
         return { code: -1, msg: '当前状态不可取消' }
       }
+      assertOrderStatusTransition(order.status, 'cancelled')
       const now = Date.now()
-      await db.collection('cicada_orders').doc(order_id).update({
+      const updateData = {
         status: 'cancelled',
         timeline: db.command.push({ title: '已取消', desc: reason || '用户主动取消', time: now, done: true }),
         update_time: now
+      }
+      await db.collection('cicada_orders').doc(order_id).update(updateData)
+      await logOrderEvent({
+        order,
+        action: 'cancel_order',
+        actor: user,
+        before: { status: order.status || '' },
+        after: {
+          status: updateData.status,
+          reason: reason || '用户主动取消'
+        }
       })
       return { code: 0 }
     } catch (e) {

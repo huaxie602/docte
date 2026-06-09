@@ -22,34 +22,6 @@ export const checkLogin = () => {
 	return !!token.value
 }
 
-// 发送验证码
-export const sendCode = async (phone) => {
-	try {
-		await authApi.sendSmsCode(phone)
-		return { success: true, message: '验证码已发送' }
-	} catch (error) {
-		return { success: false, message: error.message || '发送失败' }
-	}
-}
-
-// 登录
-export const login = async (phone, code) => {
-	try {
-		const res = await authApi.loginWithCode(phone, code)
-		
-		// 保存 token 和用户信息
-		token.value = res.token
-		userInfo.value = res.userInfo
-		
-		uni.setStorageSync('token', res.token)
-		uni.setStorageSync('userInfo', res.userInfo)
-		
-		return { success: true, data: res }
-	} catch (error) {
-		return { success: false, message: error.message || '登录失败' }
-	}
-}
-
 // 退出登录
 export const logout = async () => {
 	try {
@@ -101,8 +73,6 @@ export const useAuth = () => {
 		isLoggedIn,
 		initAuth,
 		checkLogin,
-		sendCode,
-		login,
 		logout,
 		fetchUserInfo,
 		updateProfile,

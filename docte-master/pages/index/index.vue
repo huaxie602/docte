@@ -898,7 +898,6 @@
 				<text class="login-desc">专业牙科仪器 · 全程检修服务</text>
 				<button class="wechat-login tap" open-type="getPhoneNumber" @getphonenumber="onGetPhoneNumberLogin">微信手机号授权登录</button>
 				<view class="phone-login" @click="onDevLogin">开发测试登录</view>
-				<view class="phone-login disabled">短信验证码登录暂未开放</view>
 				<text class="login-agree">授权登录即视为您同意《用户服务协议》及《隐私政策》</text>
 			</view>
 		</view>
@@ -10250,11 +10249,6 @@ onMounted(() => {
 	border: 2rpx solid #E4ECF7;
 	background: #FFFFFF;
 	color: #0F1F3A;
-}
-
-.phone-login.disabled {
-	color: #94A3B8;
-	background: #F6F8FC;
 }
 
 .login-agree {

@@ -1,8 +1,9 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
+const { ROLE_LABELS, ALL_ROLES } = require('../common/cicada-order-workflow')
 
 const ADMIN_TOKEN_EXPIRE = 8 * 3600 * 1000 // 8小时
-const STAFF_ROLES = ['admin', 'engineer']
+const STAFF_ROLES = ALL_ROLES
 const ADMIN_LOGIN_RATE_LIMIT = {
   max: 5,
   windowMs: 15 * 60 * 1000
@@ -299,13 +300,15 @@ module.exports = {
         role: user.role,
         isAdmin: user.role === 'admin',
         isEngineer: user.role === 'engineer',
+        isFinance: user.role === 'finance',
+        isSupport: user.role === 'support',
         user: {
           _id: user._id,
           username: user.username,
           name: user.name || user.nickname || '',
           phone: user.phone || '',
           role: user.role,
-          roleDisplay: user.role === 'admin' ? '管理员' : '工程师'
+          roleDisplay: ROLE_LABELS[user.role] || user.role
         }
       }
     } catch (e) {
@@ -425,7 +428,7 @@ module.exports = {
         if (!res.updated) return { code: -1, msg: '员工不存在' }
         return { code: 0 }
       } else {
-        const list = await col.where({ role: db.command.in(['admin', 'engineer']) }).get()
+        const list = await col.where({ role: db.command.in(STAFF_ROLES) }).get()
         const data = list.data.map(({ password, password_hash, password_salt, token, token_expire, ...staffInfo }) => staffInfo)
         return { code: 0, data }
       }

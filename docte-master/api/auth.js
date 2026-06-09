@@ -47,10 +47,6 @@ const runLogin = async (method, params = {}) => {
   return persistAuthSession(data)
 }
 
-export const loginWithPhone = () => {
-  return Promise.reject(new Error('暂不支持手机号直登，请使用微信手机号授权登录'))
-}
-
 export const login = (params = {}) => {
   return runLogin('login', params)
 }
