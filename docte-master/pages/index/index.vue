@@ -3561,14 +3561,16 @@ const submitFeedback = async () => {
 	}
 }
 
-const onGetPhoneNumberLogin = async (event) => {
-	if (event.detail.errMsg !== 'getPhoneNumber:ok') {
-		if (event.detail.errMsg && event.detail.errMsg.includes('cancel')) return
+const onGetPhoneNumberLogin = async (event = {}) => {
+	const detail = event.detail || {}
+
+	if (detail.errMsg !== 'getPhoneNumber:ok') {
+		if (detail.errMsg && detail.errMsg.includes('cancel')) return
 		uni.showToast({ title: '授权失败，请重试', icon: 'none' })
 		return
 	}
 
-	if (!event.detail.code) {
+	if (!detail.code) {
 		uni.showToast({ title: '获取手机号授权失败', icon: 'none' })
 		return
 	}
@@ -3578,7 +3580,7 @@ const onGetPhoneNumberLogin = async (event) => {
 		if (!loginRes.code) {
 			throw new Error('获取微信登录凭证失败')
 		}
-		const res = await wechatLogin({ code: loginRes.code, phoneCode: event.detail.code })
+		const res = await wechatLogin({ code: loginRes.code, phoneCode: detail.code })
 		if (applyLoginSession(res)) {
 			uni.showToast({ title: '登录成功', icon: 'success' })
 		}

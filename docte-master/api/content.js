@@ -71,9 +71,39 @@ const displayName = (value) => {
 	return text && !isGeneratedId(text) ? text : ''
 }
 
-export const wechatLogin = (data = {}) => getUserCloudObject().login(data).then(unwrapCloudResult)
+const getLocalDevLoginSession = () => ({
+	token: `local-dev-token-${Date.now()}`,
+	userInfo: {
+		id: 'local-dev-user',
+		userId: 'local-dev-user',
+		phone: '13800138000',
+		nickname: '开发测试用户',
+		avatar: '',
+		unit: '本地调试',
+		role: 'user'
+	}
+})
 
-export const devLogin = () => getUserCloudObject().devLogin({}).then(unwrapCloudResult)
+export const wechatLogin = (data = {}) => {
+	const cloudObject = getUserCloudObject()
+	if (!cloudObject || typeof cloudObject.login !== 'function') {
+		throw new Error('云服务未连接，请先在 HBuilderX 关联并部署 uniCloud')
+	}
+	return cloudObject.login(data).then(unwrapCloudResult)
+}
+
+export const devLogin = async () => {
+	try {
+		const cloudObject = getUserCloudObject()
+		if (!cloudObject || typeof cloudObject.devLogin !== 'function') {
+			return getLocalDevLoginSession()
+		}
+		return await cloudObject.devLogin({}).then(unwrapCloudResult)
+	} catch (error) {
+		console.warn('cloud devLogin unavailable, using local dev session:', error)
+		return getLocalDevLoginSession()
+	}
+}
 
 export const logout = () => Promise.resolve()
 
