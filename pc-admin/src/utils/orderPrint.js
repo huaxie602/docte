@@ -9,17 +9,61 @@ const defaultPrintConfig = {
   paperSize: 'A4',
   copies: 1,
   showSignature: true,
+  templateMode: 'auto',
+  enabledFields: ['order', 'customer', 'items', 'inboundLogistics', 'returnLogistics', 'printRemark'],
   footer: '感谢您的信任！为了您的设备健康，建议定期维护保养。'
 }
 
+const printFieldDefinitions = [
+  { key: 'order', label: '工单信息' },
+  { key: 'customer', label: '客户信息' },
+  { key: 'items', label: '产品明细' },
+  { key: 'inboundLogistics', label: '寄入物流' },
+  { key: 'returnLogistics', label: '回寄物流' },
+  { key: 'printRemark', label: '随件留言' },
+  { key: 'invoice', label: '发票信息' }
+]
+
+export const getDefaultPrintFieldKeys = () => printFieldDefinitions.map(field => field.key)
+export const getPrintFieldDefinitions = () => [...printFieldDefinitions]
+
 export const parsePrintConfig = (value) => {
-  if (!value) return { ...defaultPrintConfig }
-  if (typeof value === 'object') return { ...defaultPrintConfig, ...value }
+  const mergeConfig = (config = {}) => ({
+    ...defaultPrintConfig,
+    ...config,
+    enabledFields: Array.isArray(config.enabledFields) && config.enabledFields.length
+      ? config.enabledFields
+      : [...defaultPrintConfig.enabledFields]
+  })
+
+  if (!value) return mergeConfig()
+  if (typeof value === 'object') return mergeConfig(value)
   try {
-    return { ...defaultPrintConfig, ...JSON.parse(value) }
+    return mergeConfig(JSON.parse(value))
   } catch (error) {
-    return { ...defaultPrintConfig }
+    return mergeConfig()
   }
+}
+
+export const resolvePrintTemplate = (order = {}, rawConfig = {}) => {
+  const config = parsePrintConfig(rawConfig)
+  if (config.templateMode && config.templateMode !== 'auto') {
+    const titleMap = {
+      'repair-sheet': '售后维修处理单',
+      'return-list': '设备维修回寄清单',
+      'repair-receipt': config.title || defaultPrintConfig.title
+    }
+    return { key: config.templateMode, title: titleMap[config.templateMode] || config.title || defaultPrintConfig.title }
+  }
+
+  const status = String(order.status || '')
+  if (['已回寄', '已发货', '已完成', '已处理'].some(item => status.includes(item))) {
+    return { key: 'return-list', title: '设备维修回寄清单' }
+  }
+  if (['处理中', '维修中', '已签收'].some(item => status.includes(item))) {
+    return { key: 'repair-sheet', title: '售后维修处理单' }
+  }
+  return { key: 'repair-receipt', title: config.title || defaultPrintConfig.title }
 }
 
 export const formatOrderItems = (items = []) => {
@@ -41,24 +85,32 @@ const getPaperStyle = (paperSize) => {
   return '@page { size: A4; margin: 18mm; } body { margin: 18mm; }'
 }
 
+const buildPrintRows = (order = {}, config = {}) => {
+  const enabled = new Set(config.enabledFields || defaultPrintConfig.enabledFields)
+  const rows = []
+
+  if (enabled.has('order')) {
+    rows.push(['工单编号', order.id], ['提交时间', order.submitTime], ['当前状态', order.status])
+  }
+  if (enabled.has('customer')) {
+    rows.push(['诊所/单位', order.clinicName], ['联系人', order.customerName], ['联系电话', order.phone], ['回寄地址', order.address])
+  }
+  if (enabled.has('items')) rows.push(['产品明细', formatOrderItems(order.itemsList)])
+  if (enabled.has('inboundLogistics')) rows.push(['寄入物流', `${order.logisticsCompany || ''} ${order.logisticsNo || ''}`.trim()])
+  if (enabled.has('returnLogistics')) rows.push(['回寄物流', `${order.returnCompany || ''} ${order.returnNo || ''}`.trim()])
+  if (enabled.has('invoice')) rows.push(['发票信息', `${order.invoiceTitle || ''} ${order.taxId || ''}`.trim()])
+  if (enabled.has('printRemark')) rows.push(['随件留言', order.printRemark])
+
+  return rows
+}
+
 const buildPrintSection = (order, config) => {
-  const rows = [
-    ['工单编号', order.id],
-    ['提交时间', order.submitTime],
-    ['当前状态', order.status],
-    ['诊所/单位', order.clinicName],
-    ['联系人', order.customerName],
-    ['联系电话', order.phone],
-    ['回寄地址', order.address],
-    ['产品明细', formatOrderItems(order.itemsList)],
-    ['寄出物流', `${order.logisticsCompany || ''} ${order.logisticsNo || ''}`.trim()],
-    ['回寄物流', `${order.returnCompany || ''} ${order.returnNo || ''}`.trim()],
-    ['随件留言', order.printRemark]
-  ]
+  const template = resolvePrintTemplate(order, config)
+  const rows = buildPrintRows(order, config)
 
   return `
     <section class="print-section">
-      <h1>${escapeHtml(config.title)}</h1>
+      <h1>${escapeHtml(template.title)}</h1>
       <table>
         ${rows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value || '-')}</td></tr>`).join('')}
       </table>

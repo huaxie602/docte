@@ -12,9 +12,19 @@ const withToken = (params = {}) => ({
   token: uni.getStorageSync('token') || ''
 })
 
+const clearAuthStorage = () => {
+  uni.removeStorageSync('token')
+  uni.removeStorageSync('userInfo')
+  uni.removeStorageSync('isLoggedIn')
+}
+
 const unwrapCloudResult = (result = {}) => {
+  if (!result || typeof result !== 'object') return result
   if (result.code === 0 || result.code === undefined) {
     return result.data === undefined ? result : result.data
+  }
+  if ([401, 1004, 100401].includes(Number(result.code))) {
+    clearAuthStorage()
   }
   throw new Error(result.message || result.msg || '请求失败')
 }

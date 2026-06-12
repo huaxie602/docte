@@ -49,6 +49,59 @@
         </el-form>
       </el-tab-pane>
 
+      <el-tab-pane label="调研海报" name="survey">
+        <el-alert
+          title="这里配置首页“调研有礼”弹窗展示的海报图片。可直接填写已备案可访问的图片 URL，也可以上传图片后自动使用云存储地址。"
+          type="info"
+          show-icon
+          :closable="false"
+          style="margin: 20px 0;"
+        />
+        <el-form label-width="120px" class="survey-form">
+          <el-form-item label="海报图片地址">
+            <el-input
+              v-model="config.surveyPosterUrl"
+              clearable
+              placeholder="请输入 HTTPS 图片地址，或上传图片后自动填入"
+            ></el-input>
+          </el-form-item>
+          <el-form-item label="上传替换">
+            <el-upload
+              drag
+              action="#"
+              :auto-upload="false"
+              :limit="1"
+              :on-change="handleSurveyPosterChange"
+              :on-exceed="handleSurveyPosterExceed"
+              :file-list="surveyPosterFileList"
+              accept=".png,.jpg,.jpeg,.webp,.gif"
+            >
+              <el-icon><UploadFilled /></el-icon>
+              <div class="el-upload__text">将海报图片拖到此处，或 <em>点击选择</em></div>
+              <template #tip>
+                <div class="upload-tip">支持 PNG、JPG、JPEG、WEBP、GIF，建议单个文件不超过 5MB。</div>
+              </template>
+            </el-upload>
+          </el-form-item>
+          <el-form-item label="当前预览">
+            <div class="survey-preview">
+              <el-image
+                v-if="surveyPreviewUrl"
+                class="survey-preview-image"
+                :src="surveyPreviewUrl"
+                :preview-src-list="[surveyPreviewUrl]"
+                fit="contain"
+              ></el-image>
+              <div v-else class="preview-placeholder">未配置调研海报时，小程序将使用内置 CDN 海报兜底。</div>
+            </div>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="saveConfig">保存配置</el-button>
+            <el-button :loading="uploadingSurveyPoster" @click="confirmSurveyPosterUpload">上传并使用</el-button>
+          </el-form-item>
+        </el-form>
+      </el-tab-pane>
+
       <el-tab-pane label="操作教程" name="guide">
         <el-alert
           title="快速指南、报修指南、查询指南、开票指南四个栏目固定展示；上传 PDF、图片或 Word 文档后，小程序端会在对应栏目展示并支持打开浏览。"
@@ -124,9 +177,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { saveSettings, getSettings, getGuides, updateGuide, uploadGuideFile } from '../api/admin.js'
+import { saveSettings, getSettings, getGuides, updateGuide, uploadGuideFile, uploadSurveyPoster } from '../api/admin.js'
 
 const defaultPrintConfig = () => ({
   title: '设备维修回寄单',
@@ -137,7 +190,7 @@ const defaultPrintConfig = () => ({
 })
 
 const activeContentTab = ref('policy')
-const config = reactive({ warranty: '', feePolicy: '' })
+const config = reactive({ warranty: '', feePolicy: '', surveyPosterUrl: '' })
 const printConfig = reactive(defaultPrintConfig())
 const guideDefaults = [
   { type: 'quick', category: '快速指南', desc: '跳转到图文并茂的快速入门文档，帮助用户快速了解小程序售后流程。', sort: 1 },
@@ -160,12 +213,29 @@ const parsePrintConfig = (value) => {
   }
 }
 
+const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = (e) => resolve(String(e.target.result || '').split(',')[1] || '')
+  reader.onerror = reject
+  reader.readAsDataURL(file)
+})
+
+const buildSettingsPayload = () => ({
+  warranty_policy: config.warranty,
+  fee_description: config.feePolicy,
+  print_config: JSON.stringify(printConfig),
+  survey_poster_url: String(config.surveyPosterUrl || '').trim()
+})
+
+const surveyPreviewUrl = computed(() => String(config.surveyPosterUrl || '').trim())
+
 const loadSettings = async () => {
   try {
     const token = localStorage.getItem('adminToken')
     const data = await getSettings(token)
     config.warranty = data.warranty_policy || ''
     config.feePolicy = data.fee_description || ''
+    config.surveyPosterUrl = data.survey_poster_url || ''
     Object.assign(printConfig, parsePrintConfig(data.print_config))
   } catch (error) {
     console.error('加载配置失败:', error)
@@ -175,11 +245,7 @@ const loadSettings = async () => {
 const saveConfig = async () => {
   try {
     const token = localStorage.getItem('adminToken')
-    await saveSettings(token, {
-      warranty_policy: config.warranty,
-      fee_description: config.feePolicy,
-      print_config: JSON.stringify(printConfig)
-    })
+    await saveSettings(token, buildSettingsPayload())
     ElMessage.success('配置保存成功')
   } catch (error) {
     ElMessage.error(error.message || '保存失败')
@@ -226,6 +292,8 @@ const uploadDialogVisible = ref(false)
 const currentGuide = ref(null)
 const uploadFileList = ref([])
 const uploadingGuide = ref(false)
+const surveyPosterFileList = ref([])
+const uploadingSurveyPoster = ref(false)
 
 const openUploadDialog = (row) => {
   currentGuide.value = row
@@ -235,6 +303,34 @@ const openUploadDialog = (row) => {
 const handleFileChange = (file, fileList) => { uploadFileList.value = fileList }
 const handleFileExceed = () => {
   ElMessage.warning('每个教程栏目一次只能上传 1 个文档')
+}
+const handleSurveyPosterChange = (file, fileList) => { surveyPosterFileList.value = fileList.slice(-1) }
+const handleSurveyPosterExceed = () => {
+  ElMessage.warning('调研海报一次只能上传 1 张图片')
+}
+const confirmSurveyPosterUpload = async () => {
+  if (!surveyPosterFileList.value.length) { ElMessage.warning('请先选择调研海报图片'); return }
+  const file = surveyPosterFileList.value[0].raw
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('调研海报图片不能超过 5MB')
+    return
+  }
+  const token = localStorage.getItem('adminToken')
+
+  try {
+    uploadingSurveyPoster.value = true
+    const fileContent = await readFileAsBase64(file)
+    const uploadData = await uploadSurveyPoster(token, fileContent, file.name, file.type)
+    config.surveyPosterUrl = uploadData.fileUrl || uploadData.fileID || ''
+    await saveSettings(token, buildSettingsPayload())
+    surveyPosterFileList.value = []
+    ElMessage.success('调研海报上传并保存成功')
+  } catch (error) {
+    ElMessage.error(error.message || '调研海报上传失败')
+  } finally {
+    uploadingSurveyPoster.value = false
+  }
 }
 const confirmUpload = async () => {
   if (!uploadFileList.value.length) { ElMessage.warning('请先选择要上传的文件'); return }
@@ -250,12 +346,7 @@ const confirmUpload = async () => {
 
   try {
     uploadingGuide.value = true
-    const fileContent = await new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve(e.target.result.split(',')[1])
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
+    const fileContent = await readFileAsBase64(file)
     const uploadData = await uploadGuideFile(token, fileContent, file.name, file.type)
     await updateGuide(token, currentGuide.value._id, {
       file_name: file.name,
@@ -300,6 +391,9 @@ onMounted(() => {
 .field-title { font-weight:600; margin-bottom:12px; }
 .save-row { margin-top:20px; text-align:center; }
 .print-form { max-width: 720px; margin-top: 20px; }
+.survey-form { max-width: 760px; margin-top: 20px; }
+.survey-preview { width: 220px; min-height: 160px; display: flex; align-items: center; justify-content: center; }
+.survey-preview-image { width: 220px; max-height: 320px; border: 1px solid #e5e6eb; border-radius: 8px; background: #f7f8fa; }
 .upload-title { margin-bottom:16px; color:#165DFF; font-weight:600; }
 .upload-tip { margin-top: 8px; font-size: 12px; color: #86909c; }
 .preview-box { background:#f7f8fa; border-radius:10px; padding:20px; line-height:1.8; color:#4e5969; }

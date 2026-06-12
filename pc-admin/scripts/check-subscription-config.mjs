@@ -26,12 +26,17 @@ const fileEnv = {
 
 const readEnv = (key) => process.env[key] || fileEnv[key] || ''
 const normalizeBase = (base = '') => String(base || '').replace(/\/$/, '')
+const devServerBase = normalizeBase(readEnv('VITE_DEV_SERVER_URL') || 'http://127.0.0.1:5173')
+const resolveRequestUrl = (url = '') => {
+  if (/^https?:\/\//i.test(url)) return url
+  return `${devServerBase}${url.startsWith('/') ? '' : '/'}${url}`
+}
 const defaultCloudBase = 'https://env-00jy6bcqqsjw.dev-hz.cloudbasefunction.cn'
 const cloudBase = normalizeBase(readEnv('VITE_UNICLOUD_BASE_URL') || defaultCloudBase)
 const adminOrderUrl = normalizeBase(readEnv('VITE_ADMIN_ORDER_URL') || `${cloudBase}/cicada-admin-order`)
 const configUrl = normalizeBase(readEnv('VITE_CLIENT_PUBLIC_URL') || adminOrderUrl)
 
-const res = await fetch(`${configUrl}/getSubscriptionConfig`, {
+const res = await fetch(resolveRequestUrl(`${configUrl}/getSubscriptionConfig`), {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: '{}'

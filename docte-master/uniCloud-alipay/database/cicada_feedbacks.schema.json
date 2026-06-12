@@ -1,1 +1,68 @@
-{"bsonType":"object","required":["user_id","type","content","status"],"properties":{"_id":{"description":"ID"},"user_id":{"bsonType":"string"},"type":{"bsonType":"string","enum":["投诉","建议"]},"content":{"bsonType":"string"},"images":{"bsonType":"array"},"contact_type":{"bsonType":"string"},"contact_value":{"bsonType":"string"},"rel_order_no":{"bsonType":"string"},"status":{"bsonType":"string","enum":["待处理","已处理"]},"create_time":{"bsonType":"timestamp"}}}
+{
+  "bsonType": "object",
+  "required": [
+    "user_id",
+    "type",
+    "content",
+    "status"
+  ],
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "user_id": {
+      "bsonType": "string"
+    },
+    "type": {
+      "bsonType": "string",
+      "enum": [
+        "投诉",
+        "建议"
+      ]
+    },
+    "content": {
+      "bsonType": "string"
+    },
+    "images": {
+      "bsonType": "array"
+    },
+    "contact_type": {
+      "bsonType": "string"
+    },
+    "contact_value": {
+      "bsonType": "string"
+    },
+    "rel_order_no": {
+      "bsonType": "string"
+    },
+    "status": {
+      "bsonType": "string",
+      "enum": [
+        "待处理",
+        "已处理"
+      ]
+    },
+    "handle_remark": {
+      "bsonType": "string",
+      "description": "后台处理备注"
+    },
+    "handle_time": {
+      "bsonType": "timestamp",
+      "description": "后台处理时间"
+    },
+    "handle_user_id": {
+      "bsonType": "string",
+      "description": "后台处理人ID"
+    },
+    "handle_user_name": {
+      "bsonType": "string",
+      "description": "后台处理人名称"
+    },
+    "update_time": {
+      "bsonType": "timestamp"
+    },
+    "create_time": {
+      "bsonType": "timestamp"
+    }
+  }
+}

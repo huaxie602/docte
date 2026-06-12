@@ -33,7 +33,10 @@
 							<input v-model="product.name" placeholder="请输入" placeholder-class="input-placeholder" />
 						</view>
 						<view class="repair-field">
-							<text><text class="required-star">*</text>产品序列号</text>
+							<view class="field-label-wrap">
+								<text>产品序列号</text>
+								<text class="field-optional">选填</text>
+							</view>
 							<input v-model="product.serial" placeholder="请输入" placeholder-class="input-placeholder" />
 						</view>
 						<view class="repair-field">
@@ -71,7 +74,7 @@
 						</view>
 						<view class="media-area">
 							<view class="media-title">
-								<text><text class="required-star">*</text>产品清单 / 故障图片或视频</text>
+								<text>产品清单 / 故障图片或视频 <text class="field-optional">选填</text></text>
 								<text>{{ product.media.length }}/3</text>
 							</view>
 							<view class="media-grid">
@@ -897,7 +900,7 @@
 				<text class="login-title">欢迎使用</text>
 				<text class="login-desc">专业牙科仪器 · 全程检修服务</text>
 				<button class="wechat-login tap" open-type="getPhoneNumber" @getphonenumber="onGetPhoneNumberLogin">微信手机号授权登录</button>
-				<view class="phone-login" @click="onDevLogin">开发测试登录</view>
+				<view v-if="showDevLogin" class="phone-login" @click="onDevLogin">开发测试登录</view>
 				<text class="login-agree">授权登录即视为您同意《用户服务协议》及《隐私政策》</text>
 			</view>
 		</view>
@@ -1310,6 +1313,7 @@ import {
 	getFaultTypes,
 	getFeePolicy,
 	getGuide,
+	getSurveyPoster,
 	getSubscriptionConfig,
 	getProductList,
 	applyInvoice,
@@ -1379,7 +1383,8 @@ const copied = ref('')
 const showQr = ref(false)
 const showOfficial = ref(false)
 const showRepairTools = ref(false)
-const surveyPosterUrl = cicadaAssets.surveyPoster
+const showDevLogin = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true'
+const surveyPosterUrl = ref(cicadaAssets.surveyPoster)
 const moduleHeadPaddingTop = ref(72)
 const pageBootReady = ref(false)
 const searchKeyword = ref('')
@@ -1774,6 +1779,7 @@ const scanTrackingNo = () => {
 }
 
 const normalizeQrUrl = (url) => url || cicadaAssets.qrWechat
+const normalizeSurveyPosterUrl = (url) => String(url || '').trim() || cicadaAssets.surveyPoster
 
 const applyContact = (data = {}) => {
 	const next = normalizeContact(data)
@@ -2819,9 +2825,10 @@ const previewFeedbackRecordImage = (record = {}, index = 0) => {
 }
 
 const previewSurveyPoster = () => {
+	const currentPosterUrl = normalizeSurveyPosterUrl(surveyPosterUrl.value)
 	uni.previewImage({
-		current: surveyPosterUrl,
-		urls: [surveyPosterUrl]
+		current: currentPosterUrl,
+		urls: [currentPosterUrl]
 	})
 }
 
@@ -3214,16 +3221,8 @@ const validateRepairForm = () => {
 	for (let index = 0; index < repairProducts.value.length; index += 1) {
 		const product = repairProducts.value[index] || {}
 		const label = `第 ${index + 1} 个产品`
-		if (!String(product.serial || '').trim()) {
-			uni.showToast({ title: `${label}请填写序列号`, icon: 'none' })
-			return false
-		}
 		if (!String(product.faultDesc || '').trim()) {
 			uni.showToast({ title: `${label}请填写故障描述`, icon: 'none' })
-			return false
-		}
-		if (!Array.isArray(product.media) || !product.media.length) {
-			uni.showToast({ title: `${label}请上传故障附件`, icon: 'none' })
 			return false
 		}
 	}
@@ -3743,6 +3742,11 @@ const loadRemoteContent = async () => {
 		getGuide('invoice')
 			.then((doc) => updateDoc('guide-invoice', doc))
 			.catch((error) => console.warn('invoice guide fallback:', error)),
+		getSurveyPoster()
+			.then((data = {}) => {
+				surveyPosterUrl.value = normalizeSurveyPosterUrl(data.posterUrl || data.url)
+			})
+			.catch((error) => console.warn('survey poster fallback:', error)),
 		getContact()
 			.then((data) => applyContact(data))
 			.catch((error) => console.warn('contact fallback:', error)),

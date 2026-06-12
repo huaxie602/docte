@@ -44,18 +44,28 @@ const importTypeConfig = {
 
 const getImportConfig = (type = 'return') => importTypeConfig[type] || importTypeConfig.return
 
-export const getLogisticsImportTypeLabel = (type = 'return') => (type === 'inbound' ? '客户寄入签收' : '后台回寄发货')
+export const getLogisticsImportTypeLabel = (type = 'return') => (
+  type === 'inbound' ? '客户寄入签收' : '后台回寄发货'
+)
 
 export const downloadShippingTemplate = async (type = 'return') => {
   const config = getImportConfig(type)
   const rows = [
-    ['工单编号', '物流公司', '物流单号', config.timeHeader, '备注'],
-    ['DR2026... (请填写真实编号)', '顺丰速运 (必填)', 'SF123456... (必填)', config.sampleTime, config.note]
+    ['工单编号', '客户姓名', '手机号', '物流公司', '物流单号', config.timeHeader, '备注'],
+    ['DR2026... (必填，以工单编号匹配)', '客户姓名（核对用）', '手机号（核对用）', '顺丰速运 (必填)', 'SF123456... (必填)', config.sampleTime, config.note]
   ]
   const workbook = new ExcelJS.Workbook()
   const worksheet = workbook.addWorksheet(config.sheetName)
   worksheet.addRows(rows)
-  worksheet.columns = [{ width: 28 }, { width: 18 }, { width: 24 }, { width: 18 }, { width: 24 }]
+  worksheet.columns = [
+    { width: 32 },
+    { width: 16 },
+    { width: 18 },
+    { width: 18 },
+    { width: 24 },
+    { width: 18 },
+    { width: 24 }
+  ]
   await downloadWorkbook(workbook, config.filename)
 }
 
@@ -64,6 +74,8 @@ export const normalizeShippingRows = (rows = [], type = 'return') => {
   return rows
     .map((row = {}) => ({
       orderNo: pickCell(row, ['orderNo', 'order_no', '工单编号', '工单号']),
+      customerName: pickCell(row, ['customerName', 'customer_name', '客户姓名', '客户名', '联系人']),
+      phone: pickCell(row, ['phone', 'mobile', '手机号', '手机号码', '联系电话']),
       logisticsCompany: pickCell(row, [
         'logisticsCompany',
         'logistics_company',
@@ -122,11 +134,7 @@ export const parseShippingExcelFile = (file, type = 'return') => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (event) => {
-      try {
-        resolve(parseShippingExcelBuffer(event.target.result, type))
-      } catch (error) {
-        reject(error)
-      }
+      parseShippingExcelBuffer(event.target.result, type).then(resolve).catch(reject)
     }
     reader.onerror = reject
     reader.readAsArrayBuffer(file)

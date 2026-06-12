@@ -31,6 +31,9 @@
         <el-select v-model="wo.deviceFilter" placeholder="设备型号" clearable style="width: 180px;">
           <el-option v-for="device in deviceModels" :key="device" :label="device" :value="device"></el-option>
         </el-select>
+        <el-select v-model="wo.categoryFilter" placeholder="产品分类" clearable style="width: 150px;">
+          <el-option v-for="category in productCategoryOptions" :key="category.value" :label="category.label" :value="category.value"></el-option>
+        </el-select>
         <el-select v-model="searchInvoiceStatus" placeholder="发票状态" style="width: 130px;">
           <el-option label="全部" value=""></el-option>
           <el-option label="无需开票" value="无需开票"></el-option>
@@ -214,6 +217,7 @@
                 <div class="drawer-info-item is-wide">
                   <span>回寄地址</span>
                   <strong>{{currentOrder.address || '-'}}</strong>
+                  <el-button v-if="currentOrder.address" link type="primary" class="copy-inline-btn" @click="copyText(currentOrder.address, '回寄地址')">复制</el-button>
                 </div>
                 <div class="drawer-info-item is-wide">
                   <span>关联用户ID</span>
@@ -561,6 +565,33 @@
     </template>
   </el-dialog>
 
+  <el-dialog v-model="printDialogVisible" title="打印内容选择" width="520px" align-center>
+    <div class="export-field-panel">
+      <el-alert
+        title="默认按工单状态自动选择维修单或回寄清单模板。"
+        type="info"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 12px;"
+      ></el-alert>
+      <el-checkbox-group v-model="selectedPrintFields">
+        <div class="export-field-grid">
+          <el-checkbox
+            v-for="field in printFieldDefinitions"
+            :key="field.key"
+            :label="field.key"
+          >
+            {{ field.label }}
+          </el-checkbox>
+        </div>
+      </el-checkbox-group>
+    </div>
+    <template #footer>
+      <el-button @click="printDialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="confirmPrintWithFields">确认打印</el-button>
+    </template>
+  </el-dialog>
+
   <el-dialog v-model="exportDialogVisible" title="自定义导出字段" width="500px" align-center>
     <div class="export-field-panel">
       <el-checkbox
@@ -652,8 +683,9 @@ import { getSettings } from '../api/admin.js'
 import { exportOrdersToWorkbook, formatOrderAttachments, formatOrderItems } from '../utils/orderExport.js'
 import { transformOrders } from '../utils/orderTransform.js'
 import { toEnglishStatus } from '../utils/orderStatus.js'
-import { openPrintWindow, parsePrintConfig } from '../utils/orderPrint.js'
+import { getPrintFieldDefinitions, openPrintWindow, parsePrintConfig } from '../utils/orderPrint.js'
 import { downloadShippingTemplate, getLogisticsImportTypeLabel, parseShippingExcelFile } from '../utils/shippingImport.js'
+import { flattenProductModels, getModelsByCategory, getProductCategoryOptions } from '../utils/productCatalog.js'
 
 const route = useRoute()
 const isMobile = ref(window.innerWidth <= 768)
@@ -822,6 +854,10 @@ const workflowConfig = ref(null)
 const isPrinting = ref(false)
 const printTime = ref('')
 const printConfig = ref(parsePrintConfig())
+const printDialogVisible = ref(false)
+const pendingPrintOrders = ref([])
+const printFieldDefinitions = getPrintFieldDefinitions()
+const selectedPrintFields = ref([...printConfig.value.enabledFields])
 const exportDialogVisible = ref(false)
 const selectedExportFields = ref(exportableFields.map(field => field.key))
 const checkAll = ref(true)
@@ -927,10 +963,13 @@ const fetchAllFilteredOrders = async () => {
   return allOrders
 }
 
-const wo = reactive({ search: '', filter: '', deviceFilter: '', page: 1, pageSize: 10 })
+const wo = reactive({ search: '', filter: '', deviceFilter: '', categoryFilter: '', page: 1, pageSize: 10 })
+const productCategoryOptions = getProductCategoryOptions()
 
 const deviceModels = computed(() => {
+  const catalogModels = wo.categoryFilter ? getModelsByCategory(wo.categoryFilter) : flattenProductModels()
   const models = [...new Set([
+    ...catalogModels,
     ...deviceModelOptions.value,
     ...orders.value.flatMap(o => (o.itemsList || []).map(item => item.product_model)).filter(Boolean)
   ])]
@@ -963,7 +1002,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => [wo.search, wo.filter, wo.deviceFilter, searchInvoiceStatus.value, activeTodoType.value],
+  () => [wo.search, wo.filter, wo.deviceFilter, wo.categoryFilter, searchInvoiceStatus.value, activeTodoType.value],
   () => {
     if (wo.page === 1) {
       loadOrders()
@@ -972,6 +1011,12 @@ watch(
     }
   }
 )
+
+watch(() => wo.categoryFilter, () => {
+  if (wo.deviceFilter && !deviceModels.value.includes(wo.deviceFilter)) {
+    wo.deviceFilter = ''
+  }
+})
 
 watch(
   () => [route.query.filter, route.query.todo],
@@ -1657,16 +1702,38 @@ const loadPrintConfig = async () => {
     const token = localStorage.getItem('adminToken')
     const data = await getSettings(token)
     printConfig.value = parsePrintConfig(data && data.print_config)
+    selectedPrintFields.value = [...printConfig.value.enabledFields]
   } catch (error) {
     printConfig.value = parsePrintConfig()
+    selectedPrintFields.value = [...printConfig.value.enabledFields]
   }
+}
+
+const openPrintFieldDialog = (ordersForPrint = []) => {
+  pendingPrintOrders.value = ordersForPrint
+  selectedPrintFields.value = [...(printConfig.value.enabledFields || [])]
+  printDialogVisible.value = true
+}
+
+const confirmPrintWithFields = () => {
+  if (!selectedPrintFields.value.length) {
+    ElMessage.warning('请至少选择一个打印内容')
+    return
+  }
+  const config = {
+    ...printConfig.value,
+    enabledFields: [...selectedPrintFields.value]
+  }
+  if (!openPrintWindow(pendingPrintOrders.value, config)) {
+    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
+    return
+  }
+  printDialogVisible.value = false
 }
 
 const printConfiguredOrder = () => {
   if (!currentOrder.value) return
-  if (!openPrintWindow([currentOrder.value], printConfig.value)) {
-    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
-  }
+  openPrintFieldDialog([currentOrder.value])
 }
 
 const handleConfiguredBatchPrint = () => {
@@ -1674,9 +1741,15 @@ const handleConfiguredBatchPrint = () => {
     ElMessage.warning('请先勾选要打印的工单')
     return
   }
-  if (!openPrintWindow(selectedOrders.value, printConfig.value)) {
-    ElMessage.error('浏览器拦截了打印窗口，请允许弹窗后重试')
-  }
+  openPrintFieldDialog(selectedOrders.value)
+}
+
+const copyText = (text = '', label = '内容') => {
+  const value = String(text || '').trim()
+  if (!value) return
+  navigator.clipboard.writeText(value)
+    .then(() => ElMessage.success(`${label}已复制`))
+    .catch(() => ElMessage.error('复制失败，请手动选择复制'))
 }
 
 const openImportDialog = (type = 'return') => {
@@ -1825,6 +1898,7 @@ const confirmExportExcel = async () => {
 .drawer-info-item.is-wide { grid-column: 1 / -1; }
 .drawer-info-item span { display: block; margin-bottom: 4px; color: #86909c; font-size: 12px; line-height: 1.3; }
 .drawer-info-item strong { display: block; color: #1d2129; font-size: 14px; font-weight: 600; line-height: 1.5; word-break: break-all; }
+.copy-inline-btn { padding: 0; min-height: auto; margin-top: 4px !important; }
 .mono-text { font-family: 'Consolas', 'Menlo', monospace; }
 .quote-editor-section, .payment-section { background: #fff; border: 1px solid #e5eefb; box-shadow: 0 8px 24px rgba(24, 144, 255, 0.06); }
 .quote-summary-bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
@@ -1887,6 +1961,17 @@ const confirmExportExcel = async () => {
 @media screen and (max-width: 768px) {
   .page-header { flex-direction: column; align-items: flex-start; gap: 16px; }
   .header-stats { width: 100%; overflow-x: auto; }
+  .glass-card { padding: 16px; border-radius: 8px; }
+  .workorder-header { align-items: stretch; gap: 14px; }
+  .toolbar-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .toolbar-actions :deep(.el-button), .toolbar-actions :deep(.el-date-editor), .toolbar-actions :deep(.el-dropdown) { width: 100% !important; margin-left: 0 !important; }
+  .toolbar-actions :deep(.el-dropdown .el-button) { width: 100%; }
+  .info-banner { align-items: flex-start; padding: 14px; }
+  .banner-badge { display: none; }
+  .import-workbench-actions { flex-direction: column; align-items: stretch; }
+  .import-workbench-actions :deep(.el-button), .import-workbench-actions :deep(.el-upload) { width: 100%; }
+  .export-field-grid { grid-template-columns: 1fr; }
+  .import-summary { grid-template-columns: 1fr; }
   .filter-container { flex-direction: column; align-items: stretch !important; gap: 12px; }
   .filter-container .el-input, .filter-container .el-select { width: 100% !important; }
   .drawer-info-grid { grid-template-columns: 1fr; }

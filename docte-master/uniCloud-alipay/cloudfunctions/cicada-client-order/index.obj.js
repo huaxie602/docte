@@ -1,6 +1,6 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
-const { assertOrderStatusTransition } = require('../common/cicada-order-workflow')
+const { assertOrderStatusTransition } = require('cicada-order-workflow')
 
 const CREATE_ORDER_LIMIT = { windowMs: 60 * 1000, max: 8 }
 const WECHAT_PAY_API_BASE = 'https://api.mch.weixin.qq.com'

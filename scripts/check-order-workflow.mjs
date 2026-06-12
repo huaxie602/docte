@@ -4,15 +4,20 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const read = (file) => readFileSync(resolve(root, file), 'utf8')
+const readJson = (file) => JSON.parse(read(file))
 const require = createRequire(import.meta.url)
 
 const files = {
   workflow: 'docte-master/uniCloud-alipay/cloudfunctions/common/cicada-order-workflow/index.js',
+  workflowPackage: 'docte-master/uniCloud-alipay/cloudfunctions/common/cicada-order-workflow/package.json',
   eventsSchema: 'docte-master/uniCloud-alipay/database/cicada_order_events.schema.json',
   userSchema: 'docte-master/uniCloud-alipay/database/cicada_users.schema.json',
   adminOrder: 'docte-master/uniCloud-alipay/cloudfunctions/cicada-admin-order/index.obj.js',
+  adminOrderPackage: 'docte-master/uniCloud-alipay/cloudfunctions/cicada-admin-order/package.json',
   clientOrder: 'docte-master/uniCloud-alipay/cloudfunctions/cicada-client-order/index.obj.js',
+  clientOrderPackage: 'docte-master/uniCloud-alipay/cloudfunctions/cicada-client-order/package.json',
   adminSys: 'docte-master/uniCloud-alipay/cloudfunctions/cicada-admin-sys/index.obj.js',
+  adminSysPackage: 'docte-master/uniCloud-alipay/cloudfunctions/cicada-admin-sys/package.json',
   pcOrderApi: 'pc-admin/src/api/order.js',
   pcUsers: 'pc-admin/src/views/Users.vue',
   pcWorkOrder: 'pc-admin/src/views/WorkOrder.vue',
@@ -29,12 +34,26 @@ const expect = (condition, label) => {
   if (!condition) failures.push(label)
 }
 
+const expectWorkflowDependency = (sourceFile, packageFile, label) => {
+  if (!existsSync(resolve(root, sourceFile)) || !existsSync(resolve(root, packageFile))) return
+  const source = read(sourceFile)
+  const pkg = readJson(packageFile)
+  const hasModuleRequire = source.includes("require('cicada-order-workflow')") || source.includes('require("cicada-order-workflow")')
+  const hasRelativeRequire = source.includes("require('../common/cicada-order-workflow')") || source.includes('require("../common/cicada-order-workflow")')
+  expect(hasModuleRequire, `${label}: must require cicada-order-workflow as a uniCloud common module`)
+  expect(!hasRelativeRequire, `${label}: must not require common module by relative path`)
+  expect(pkg.dependencies && pkg.dependencies['cicada-order-workflow'] === 'file:../common/cicada-order-workflow', `${label}: missing cicada-order-workflow dependency`)
+}
+
 if (!failures.some(item => item.includes('workflow'))) {
   const source = read(files.workflow)
   expect(/ORDER_STATUS_TRANSITIONS/.test(source), 'workflow: missing transition table')
   expect(/assertOrderStatusTransition/.test(source), 'workflow: missing transition assertion')
   expect(/PERMISSIONS/.test(source), 'workflow: missing permission matrix')
   expect(/finance/.test(source) && /support/.test(source), 'workflow: missing finance/support roles')
+  const workflowPackage = readJson(files.workflowPackage)
+  expect(workflowPackage.name === 'cicada-order-workflow', 'workflow package: invalid name')
+  expect(workflowPackage.main === 'index.js', 'workflow package: invalid main')
   const workflow = require(resolve(root, files.workflow))
   const allowedTransitions = [
     ['pending', 'sent'],
@@ -84,6 +103,7 @@ if (!failures.some(item => item.includes('userSchema'))) {
 
 if (!failures.some(item => item.includes('adminOrder'))) {
   const source = read(files.adminOrder)
+  expectWorkflowDependency(files.adminOrder, files.adminOrderPackage, 'admin order')
   for (const symbol of ['assertOrderStatusTransition', 'assertRolePermission', 'logOrderEvent', 'getWorkflowConfig']) {
     expect(source.includes(symbol), `admin order: missing ${symbol}`)
   }
@@ -95,6 +115,7 @@ if (!failures.some(item => item.includes('adminOrder'))) {
 
 if (!failures.some(item => item.includes('clientOrder'))) {
   const source = read(files.clientOrder)
+  expectWorkflowDependency(files.clientOrder, files.clientOrderPackage, 'client order')
   expect(source.includes('assertOrderStatusTransition'), 'client order: missing shared transition assertion')
   expect(source.includes('assertOrderPayable') && source.includes('已取消工单不可付款'), 'client order: missing cancelled payment guard')
   for (const action of ['create_order', 'confirm_quote', 'upload_payment_proof', 'apply_invoice', 'cancel_order', 'wechat_pay_confirmed']) {
@@ -104,6 +125,7 @@ if (!failures.some(item => item.includes('clientOrder'))) {
 
 if (!failures.some(item => item.includes('adminSys'))) {
   const source = read(files.adminSys)
+  expectWorkflowDependency(files.adminSys, files.adminSysPackage, 'admin sys')
   expect(source.includes("'finance'") && source.includes("'support'"), 'admin sys: STAFF_ROLES missing finance/support')
 }
 

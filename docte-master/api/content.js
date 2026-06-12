@@ -17,8 +17,18 @@ const getOrderCloudObject = () => {
 	return orderCloudObject
 }
 
+const clearAuthStorage = () => {
+	uni.removeStorageSync('token')
+	uni.removeStorageSync('userInfo')
+	uni.removeStorageSync('isLoggedIn')
+}
+
 const unwrapCloudResult = (result = {}) => {
+	if (!result || typeof result !== 'object') return result
 	if (result.code === 0 || result.code === undefined) return result.data === undefined ? result : result.data
+	if ([401, 1004, 100401].includes(Number(result.code))) {
+		clearAuthStorage()
+	}
 	throw new Error(result.message || result.msg || '请求失败')
 }
 
@@ -96,6 +106,14 @@ export const getFeePolicy = async () => {
 }
 
 export const getGuide = (type) => getPublicCloudObject().getGuide({ type }).then(unwrapCloudResult)
+
+export const getSurveyPoster = async () => {
+	const settings = await getPublicCloudObject().getSettings({ keys: ['survey_poster_url'] }).then(unwrapCloudResult)
+	return {
+		posterUrl: settings.survey_poster_url,
+		url: settings.survey_poster_url
+	}
+}
 
 export const getContact = async () => {
 	const settings = await getPublicCloudObject().getSettings({

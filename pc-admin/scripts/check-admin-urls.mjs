@@ -26,6 +26,11 @@ const fileEnv = {
 
 const readEnv = (key) => process.env[key] || fileEnv[key] || ''
 const normalizeBase = (base = '') => String(base || '').replace(/\/$/, '')
+const devServerBase = normalizeBase(readEnv('VITE_DEV_SERVER_URL') || 'http://127.0.0.1:5173')
+const resolveRequestUrl = (url = '') => {
+  if (/^https?:\/\//i.test(url)) return url
+  return `${devServerBase}${url.startsWith('/') ? '' : '/'}${url}`
+}
 const defaultCloudBase = 'https://env-00jy6bcqqsjw.dev-hz.cloudbasefunction.cn'
 const cloudBase = normalizeBase(readEnv('VITE_UNICLOUD_BASE_URL') || defaultCloudBase)
 const resolveUrl = (envKey, functionName) => normalizeBase(readEnv(envKey) || `${cloudBase}/${functionName}`)
@@ -38,7 +43,7 @@ async function postJson(url, body) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
   try {
-    const res = await fetch(url, {
+    const res = await fetch(resolveRequestUrl(url), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

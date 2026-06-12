@@ -71,6 +71,15 @@ export const getFeedbackList = (token, status) => {
   return request.post(`${API_BASE.adminSys}/getFeedbackList`, { token, status })
 }
 
+// 处理投诉/建议反馈
+export const handleFeedback = (token, feedbackId, remark) => {
+  return request.post(`${API_BASE.adminSys}/handleFeedback`, {
+    token,
+    feedbackId,
+    remark
+  })
+}
+
 // 保存配置
 export const saveSettings = (token, settings) => {
   return request.post(`${API_BASE.adminSys}/saveSettings`, { token, settings })
@@ -97,4 +106,9 @@ export const updateGuide = (token, guide_id, payload, legacyFileUrl) => {
 // 上传教程文件（fileContent 为 base64 字符串）
 export const uploadGuideFile = (token, fileContent, fileName, fileType) => {
   return request.post(`${API_BASE.adminSys}/uploadGuideFile`, { token, fileContent, fileName, fileType })
+}
+
+// 上传调研海报图片（fileContent 为 base64 字符串）
+export const uploadSurveyPoster = (token, fileContent, fileName, fileType) => {
+  return request.post(`${API_BASE.adminSys}/uploadSurveyPoster`, { token, fileContent, fileName, fileType })
 }

@@ -1,6 +1,6 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
-const { ROLE_LABELS, ALL_ROLES } = require('../common/cicada-order-workflow')
+const { ROLE_LABELS, ALL_ROLES } = require('cicada-order-workflow')
 
 const ADMIN_TOKEN_EXPIRE = 8 * 3600 * 1000 // 8小时
 const STAFF_ROLES = ALL_ROLES
@@ -48,6 +48,15 @@ const GUIDE_TYPE_ALIASES = {
   query: ['查询指南', '查询办法', '维修查询', '物流寄送'],
   invoice: ['开票指南', '发票开具']
 }
+const SURVEY_POSTER_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'])
+const SURVEY_POSTER_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif'])
+const SURVEY_POSTER_TYPE_EXT = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif'
+}
 
 function genToken() {
   return crypto.randomBytes(32).toString('hex')
@@ -68,6 +77,20 @@ function pickFields(source = {}, fields = []) {
     }
     return result
   }, {})
+}
+
+function getFileExt(fileName = '') {
+  const cleanName = String(fileName || '').split('?')[0]
+  const match = cleanName.match(/\.([a-zA-Z0-9]+)$/)
+  return match ? match[1].toLowerCase() : ''
+}
+
+function sanitizeFileName(fileName = '', fallback = 'upload') {
+  return String(fileName || fallback).replace(/[\\/:*?"<>|]/g, '_') || fallback
+}
+
+function normalizeBase64Content(fileContent = '') {
+  return String(fileContent || '').replace(/^data:[^;]+;base64,/, '')
 }
 
 function buildPasswordFields(password) {
@@ -479,6 +502,42 @@ module.exports = {
     }
   },
 
+  async handleFeedback(params) {
+    try {
+      let token, feedbackId, replyText, remark
+      if (params && params.token) {
+        ({ token, feedbackId, replyText, remark } = params)
+      } else if (this.params) {
+        ({ token, feedbackId, replyText, remark } = this.params)
+      }
+      const user = await verifyAdminToken(token, ['admin', 'engineer'])
+
+      const targetId = String(feedbackId || '').trim()
+      const handleRemark = String(remark || replyText || '').trim()
+      if (!targetId) return { code: -1, msg: '缺少反馈ID' }
+      if (!handleRemark) return { code: -1, msg: '请填写处理备注' }
+      if (handleRemark.length > 500) return { code: -1, msg: '处理备注不能超过500字' }
+
+      const col = db.collection('cicada_feedbacks')
+      const now = Date.now()
+      const updateData = {
+        status: '已处理',
+        handle_remark: handleRemark,
+        handle_time: now,
+        handle_user_id: user._id,
+        handle_user_name: user.name || user.nickname || user.username || '',
+        update_time: now
+      }
+      const res = await col.doc(targetId).update(updateData)
+      if (!res.updated) return { code: -1, msg: '反馈不存在或已被删除' }
+
+      const latest = await col.doc(targetId).get()
+      return { code: 0, data: latest.data && latest.data[0] ? latest.data[0] : { _id: targetId, ...updateData } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
   async saveSettings(params) {
     try {
       let token, settings
@@ -588,6 +647,46 @@ module.exports = {
       }
 
       return { code: 0 }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async uploadSurveyPoster(params) {
+    try {
+      const httpInfo = this.getHttpInfo && this.getHttpInfo()
+      let token, fileContent, fileName, fileType
+      if (httpInfo && httpInfo.body) {
+        const body = JSON.parse(httpInfo.body)
+        ;({ token, fileContent, fileName, fileType } = body)
+      } else {
+        ;({ token, fileContent, fileName, fileType } = params || {})
+      }
+      await verifyAdminToken(token, ['admin'])
+
+      if (!fileContent || !fileName) return { code: -1, msg: '缺少图片内容或文件名' }
+
+      const normalizedType = String(fileType || '').trim().toLowerCase()
+      const ext = getFileExt(fileName)
+      if (!SURVEY_POSTER_IMAGE_TYPES.has(normalizedType) && !SURVEY_POSTER_IMAGE_EXTS.has(ext)) {
+        return { code: -1, msg: '仅支持 PNG、JPG、JPEG、WEBP、GIF 图片' }
+      }
+
+      const uploadExt = ext || SURVEY_POSTER_TYPE_EXT[normalizedType] || 'png'
+      let safeFileName = sanitizeFileName(fileName, `survey-poster.${uploadExt}`)
+      if (!getFileExt(safeFileName)) {
+        safeFileName = `${safeFileName}.${uploadExt}`
+      }
+
+      const buffer = Buffer.from(normalizeBase64Content(fileContent), 'base64')
+      const cloudPath = `settings/survey-poster/${Date.now()}_${safeFileName}`
+      const res = await uniCloud.uploadFile({
+        cloudPath,
+        fileContent: buffer,
+        fileType: normalizedType || `image/${uploadExt === 'jpg' ? 'jpeg' : uploadExt}`
+      })
+
+      return { code: 0, data: { fileUrl: res.fileID, fileID: res.fileID } }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
