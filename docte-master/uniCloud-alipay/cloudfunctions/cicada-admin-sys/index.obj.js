@@ -1,6 +1,6 @@
 const db = uniCloud.database()
-const crypto = require('crypto')
 const { ROLE_LABELS, ALL_ROLES } = require('cicada-order-workflow')
+const { pickFields, getFileExt, genToken, genSalt, hashPassword, buildPasswordFields, verifyPassword, getClientIp, normalizeIdentity, getRateLimitRecord, recordRateLimitHit, clearRateLimit, verifyAdminToken, TOKEN_VERIFY_FAIL_LIMIT } = require('cicada-common')
 
 const ADMIN_TOKEN_EXPIRE = 8 * 3600 * 1000 // 8小时
 const STAFF_ROLES = ALL_ROLES
@@ -58,31 +58,20 @@ const SURVEY_POSTER_TYPE_EXT = {
   'image/gif': 'gif'
 }
 
-function genToken() {
-  return crypto.randomBytes(32).toString('hex')
-}
-
-function genSalt() {
-  return crypto.randomBytes(16).toString('hex')
-}
-
-function hashPassword(password, salt) {
-  return crypto.pbkdf2Sync(String(password), salt, 100000, 64, 'sha512').toString('hex')
-}
-
-function pickFields(source = {}, fields = []) {
-  return fields.reduce((result, field) => {
-    if (Object.prototype.hasOwnProperty.call(source, field)) {
-      result[field] = source[field]
-    }
-    return result
-  }, {})
-}
-
-function getFileExt(fileName = '') {
-  const cleanName = String(fileName || '').split('?')[0]
-  const match = cleanName.match(/\.([a-zA-Z0-9]+)$/)
-  return match ? match[1].toLowerCase() : ''
+// 校验图片文件魔术字节，防止 MIME 类型伪装攻击
+function validateImageMagicBytes(buffer) {
+  if (!buffer || buffer.length < 4) return false
+  // PNG: 89 50 4E 47
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true
+  // WEBP: 52 49 46 46 ... 57 45 42 50 (RIFF....WEBP)
+  if (buffer.length >= 12 &&
+      buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+      buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) return true
+  // GIF: 47 49 46 38 (GIF8)
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) return true
+  return false
 }
 
 function sanitizeFileName(fileName = '', fallback = 'upload') {
@@ -91,15 +80,6 @@ function sanitizeFileName(fileName = '', fallback = 'upload') {
 
 function normalizeBase64Content(fileContent = '') {
   return String(fileContent || '').replace(/^data:[^;]+;base64,/, '')
-}
-
-function buildPasswordFields(password) {
-  const password_salt = genSalt()
-  return {
-    password_hash: hashPassword(password, password_salt),
-    password_salt,
-    password: ''
-  }
 }
 
 function matchGuideType(item = {}) {
@@ -126,38 +106,6 @@ async function ensureGuideDefaults() {
   }
 }
 
-async function verifyAdminToken(token, allowedRoles = ['admin']) {
-  if (!token) throw new Error('鉴权失败')
-  const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  const user = res.data[0]
-  if (!user || user.disabled || !allowedRoles.includes(user.role)) {
-    throw new Error('无权限')
-  }
-  if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
-  return user
-}
-
-function normalizeIdentity(value = '') {
-  return String(value || '').trim().toLowerCase()
-}
-
-function getClientIp(ctx) {
-  const httpInfo = ctx && ctx.getHttpInfo && ctx.getHttpInfo()
-  const headers = (httpInfo && httpInfo.headers) || {}
-  const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'] || ''
-  const forwardedIp = String(forwardedFor).split(',')[0].trim()
-  return forwardedIp ||
-    headers['x-real-ip'] ||
-    headers['X-Real-IP'] ||
-    (httpInfo && (httpInfo.clientIP || httpInfo.clientIp || httpInfo.remoteAddress)) ||
-    'unknown'
-}
-
-async function getRateLimitRecord(key) {
-  const res = await db.collection('cicada_rate_limits').where({ key }).limit(1).get()
-  return res.data && res.data[0]
-}
-
 async function assertAdminLoginAllowed(username, ip) {
   const identities = [
     { scope: 'admin-login:username', identity: normalizeIdentity(username) },
@@ -171,41 +119,6 @@ async function assertAdminLoginAllowed(username, ip) {
       throw new Error('登录失败次数过多，请 15 分钟后再试')
     }
   }
-}
-
-async function recordRateLimitHit(scope, identity) {
-  const normalized = normalizeIdentity(identity)
-  if (!normalized) return
-
-  const now = Date.now()
-  const key = `${scope}:${normalized}`
-  const col = db.collection('cicada_rate_limits')
-  const record = await getRateLimitRecord(key)
-
-  if (!record || now > record.reset_time) {
-    const nextData = {
-      key,
-      scope,
-      identity: normalized,
-      count: 1,
-      reset_time: now + ADMIN_LOGIN_RATE_LIMIT.windowMs,
-      update_time: now
-    }
-    if (record) {
-      await col.doc(record._id).update(nextData)
-    } else {
-      await col.add({
-        ...nextData,
-        create_time: now
-      })
-    }
-    return
-  }
-
-  await col.doc(record._id).update({
-    count: db.command.inc(1),
-    update_time: now
-  })
 }
 
 async function recordAdminLoginFailure(username, ip, userId = '') {
@@ -223,31 +136,11 @@ async function recordAdminLoginFailure(username, ip, userId = '') {
   }
 }
 
-async function clearRateLimit(scope, identity) {
-  const normalized = normalizeIdentity(identity)
-  if (!normalized) return
-  const record = await getRateLimitRecord(`${scope}:${normalized}`)
-  if (record) await db.collection('cicada_rate_limits').doc(record._id).remove()
-}
-
 async function clearAdminLoginFailures(username, ip) {
   await Promise.all([
     clearRateLimit('admin-login:username', username),
     clearRateLimit('admin-login:ip', ip)
   ])
-}
-
-function verifyPassword(user, password) {
-  if (!password) return false
-  if (user.password_hash && user.password_salt) {
-    const inputHash = hashPassword(password, user.password_salt)
-    const inputBuffer = Buffer.from(inputHash)
-    const storedBuffer = Buffer.from(user.password_hash)
-    return inputBuffer.length === storedBuffer.length && crypto.timingSafeEqual(inputBuffer, storedBuffer)
-  }
-
-  // 兼容历史明文密码账号，登录成功后会迁移为哈希存储。
-  return user.password === password
 }
 
 module.exports = {
@@ -356,7 +249,7 @@ module.exports = {
       if (String(newPassword).length < 6) return { code: -1, msg: '新密码至少需要 6 位' }
       if (oldPassword === newPassword) return { code: -1, msg: '新密码不能与原密码相同' }
 
-      const user = await verifyAdminToken(token, STAFF_ROLES)
+      const user = await verifyAdminToken(token, STAFF_ROLES, this)
       if (!verifyPassword(user, oldPassword)) return { code: -1, msg: '原密码不正确' }
 
       await db.collection('cicada_users').doc(user._id).update({
@@ -386,7 +279,7 @@ module.exports = {
       }
 
       if (!userId) return { code: -1, msg: '缺少用户ID' }
-      await verifyAdminToken(token, ['admin'])
+      await verifyAdminToken(token, ['admin'], this)
 
       const col = db.collection('cicada_users')
       const targetRes = await col.doc(userId).get()
@@ -419,7 +312,7 @@ module.exports = {
           ;({ token, action, staff } = body)
         }
       }
-      await verifyAdminToken(token, ['admin'])
+      await verifyAdminToken(token, ['admin'], this)
       const col = db.collection('cicada_users')
       if (action === 'add') {
         if (!staff || !staff.username || !staff.password) return { code: -1, msg: '账号和密码不能为空' }
@@ -468,7 +361,7 @@ module.exports = {
       } else if (this.params) {
         ({ token } = this.params)
       }
-      await verifyAdminToken(token, ['admin', 'engineer'])
+      await verifyAdminToken(token, ['admin', 'engineer'], this)
       const res = await db.collection('cicada_feedbacks').where({ status: '待处理' }).count()
       return { code: 0, data: { unreadCount: res.total } }
     } catch (e) {
@@ -484,7 +377,7 @@ module.exports = {
       } else if (this.params) {
         ({ token, status } = this.params)
       }
-      await verifyAdminToken(token, ['admin', 'engineer'])
+      await verifyAdminToken(token, ['admin', 'engineer'], this)
 
       const where = {}
       if (status && status !== '全部') {
@@ -510,7 +403,7 @@ module.exports = {
       } else if (this.params) {
         ({ token, feedbackId, replyText, remark } = this.params)
       }
-      const user = await verifyAdminToken(token, ['admin', 'engineer'])
+      const user = await verifyAdminToken(token, ['admin', 'engineer'], this)
 
       const targetId = String(feedbackId || '').trim()
       const handleRemark = String(remark || replyText || '').trim()
@@ -546,7 +439,7 @@ module.exports = {
       } else if (this.params) {
         ({ token, settings } = this.params)
       }
-      await verifyAdminToken(token, ['admin'])
+      await verifyAdminToken(token, ['admin'], this)
 
       if (!settings || typeof settings !== 'object') {
         return { code: -1, msg: '配置数据格式不正确' }
@@ -578,7 +471,7 @@ module.exports = {
       } else if (this.params) {
         ({ token } = this.params)
       }
-      await verifyAdminToken(token, ['admin', 'engineer'])
+      await verifyAdminToken(token, ['admin', 'engineer'], this)
 
       const res = await db.collection('cicada_settings').get()
       const settings = {}
@@ -600,7 +493,7 @@ module.exports = {
       } else if (this.params) {
         ({ token } = this.params)
       }
-      await verifyAdminToken(token, ['admin', 'engineer'])
+      await verifyAdminToken(token, ['admin', 'engineer'], this)
 
       await ensureGuideDefaults()
       const res = await db.collection('cicada_guides').orderBy('sort', 'asc').get()
@@ -618,7 +511,7 @@ module.exports = {
       } else if (this.params) {
         ({ token, guide_id, file_name, file_url, file_type, desc } = this.params)
       }
-      await verifyAdminToken(token, ['admin'])
+      await verifyAdminToken(token, ['admin'], this)
 
       if (!guide_id || !file_name) {
         return { code: -1, msg: '参数不完整' }
@@ -662,7 +555,7 @@ module.exports = {
       } else {
         ;({ token, fileContent, fileName, fileType } = params || {})
       }
-      await verifyAdminToken(token, ['admin'])
+      await verifyAdminToken(token, ['admin'], this)
 
       if (!fileContent || !fileName) return { code: -1, msg: '缺少图片内容或文件名' }
 
@@ -679,6 +572,20 @@ module.exports = {
       }
 
       const buffer = Buffer.from(normalizeBase64Content(fileContent), 'base64')
+
+      // 文件大小限制：防止大图导致内存耗尽 (DoS)
+      const MAX_IMAGE_SIZE = 10 * 1024 * 1024 // 10MB
+      if (buffer.length > MAX_IMAGE_SIZE) {
+        return { code: -1, msg: '图片大小不能超过 10MB' }
+      }
+
+      // 校验文件魔术字节，防止 MIME 类型伪装
+      const magicBytes = buffer.slice(0, 8)
+      const validMagic = validateImageMagicBytes(magicBytes)
+      if (!validMagic) {
+        return { code: -1, msg: '图片格式校验失败，仅支持 PNG、JPG、JPEG、WEBP、GIF 图片' }
+      }
+
       const cloudPath = `settings/survey-poster/${Date.now()}_${safeFileName}`
       const res = await uniCloud.uploadFile({
         cloudPath,
@@ -702,11 +609,22 @@ module.exports = {
       } else {
         ;({ token, fileContent, fileName, fileType } = params || {})
       }
-      await verifyAdminToken(token, ['admin'])
+      await verifyAdminToken(token, ['admin'], this)
 
       if (!fileContent || !fileName) return { code: -1, msg: '缺少文件内容或文件名' }
 
-      const buffer = Buffer.from(fileContent, 'base64')
+      // 文件大小限制：base64 解码前检查，防止大文件导致内存耗尽 (DoS)
+      const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+      const base64Content = String(fileContent)
+      if (base64Content.length > MAX_FILE_SIZE * 1.4) {
+        return { code: -1, msg: '文件大小不能超过 10MB' }
+      }
+
+      const buffer = Buffer.from(base64Content, 'base64')
+      if (buffer.length > MAX_FILE_SIZE) {
+        return { code: -1, msg: '文件大小不能超过 10MB' }
+      }
+
       const safeFileName = String(fileName).replace(/[\\/:*?"<>|]/g, '_')
       const cloudPath = `guides/${Date.now()}_${safeFileName}`
       const res = await uniCloud.uploadFile({
@@ -716,6 +634,37 @@ module.exports = {
       })
 
       return { code: 0, data: { fileUrl: res.fileID } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async getGuideFileUrl(params) {
+    try {
+      const httpInfo = this.getHttpInfo && this.getHttpInfo()
+      let token, fileID
+      if (httpInfo && httpInfo.body) {
+        const body = JSON.parse(httpInfo.body)
+        ;({ token, fileID } = body)
+      } else {
+        ;({ token, fileID } = params || {})
+      }
+      await verifyAdminToken(token, ['admin', 'engineer'], this)
+
+      const id = String(fileID || '').trim()
+      if (!id) return { code: -1, msg: '缺少文件ID' }
+      if (/^https?:\/\//i.test(id)) {
+        return { code: 0, data: { tempFileURL: id, url: id } }
+      }
+
+      const res = await uniCloud.getTempFileURL({ fileList: [id] })
+      const item = res.fileList && res.fileList[0]
+      const tempFileURL = item && (item.tempFileURL || item.url)
+      if (!tempFileURL) {
+        return { code: -1, msg: (item && item.errMsg) || '获取文件临时链接失败' }
+      }
+
+      return { code: 0, data: { tempFileURL, url: tempFileURL } }
     } catch (e) {
       return { code: -1, msg: e.message }
     }

@@ -1,17 +1,14 @@
 const db = uniCloud.database()
-const crypto = require('crypto')
+
+const { pickFields, normalizeBool, normalizeText, normalizePage, getClientIp, genToken, verifyUserToken, checkRateLimit } = require('cicada-common')
 
 const WX_APPID = process.env.WX_APPID
 const WX_SECRET = process.env.WX_SECRET
-const TOKEN_EXPIRE = 7 * 24 * 3600 * 1000 // 7天
+const TOKEN_EXPIRE = 48 * 3600 * 1000 // 48小时（安全考虑：缩短泄露窗口）
 
 const RATE_LIMITS = {
   login: { windowMs: 60 * 1000, max: 30 },
   feedback: { windowMs: 60 * 1000, max: 10 }
-}
-
-function genToken() {
-  return crypto.randomBytes(32).toString('hex')
 }
 
 async function getAccessToken() {
@@ -24,32 +21,6 @@ async function getAccessToken() {
     { dataType: 'json' }
   )
   return res.data.access_token
-}
-
-async function verifyUserToken(token) {
-  if (!token) throw new Error('鉴权失败')
-  const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  const user = res.data[0]
-  if (!user || user.disabled) throw new Error('鉴权失败')
-  if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
-  return user
-}
-
-function pickFields(source = {}, fields = []) {
-  return fields.reduce((result, field) => {
-    if (Object.prototype.hasOwnProperty.call(source, field)) {
-      result[field] = source[field]
-    }
-    return result
-  }, {})
-}
-
-function normalizeBool(value) {
-  return value === true
-}
-
-function normalizeText(value) {
-  return String(value === undefined || value === null ? '' : value).trim()
 }
 
 function normalizeFeedbackImages(images) {
@@ -77,12 +48,6 @@ function buildUserInfo(user = {}, id = '') {
     unit: user.unit || user.companyName || user.company_name || '',
     role: user.role || 'user'
   }
-}
-
-function normalizePage(page, pageSize) {
-  const current = Math.max(Number(page) || 1, 1)
-  const size = Math.min(Math.max(Number(pageSize) || 10, 1), 50)
-  return { page: current, pageSize: size }
 }
 
 async function saveWechatUserByPhone(phone, extra = {}) {
@@ -117,52 +82,6 @@ async function saveWechatUserByPhone(phone, extra = {}) {
   return { token, userInfo: buildUserInfo({ ...user, ...update }, user._id) }
 }
 
-function getClientIdentity(ctx, fallback = 'anonymous') {
-  const clientInfo = ctx && ctx.getClientInfo ? ctx.getClientInfo() : {}
-  return clientInfo.clientIP || clientInfo.ip || clientInfo.userAgent || fallback
-}
-
-async function checkRateLimit(scope, identity, options) {
-  const config = options || RATE_LIMITS[scope]
-  if (!identity || !config) return
-
-  const now = Date.now()
-  const key = `${scope}:${identity}`
-  const col = db.collection('cicada_rate_limits')
-  const found = await col.where({ key }).limit(1).get()
-  const record = found.data[0]
-
-  if (!record || now > record.reset_time) {
-    if (record) {
-      await col.doc(record._id).update({
-        count: 1,
-        reset_time: now + config.windowMs,
-        update_time: now
-      })
-    } else {
-      await col.add({
-        key,
-        scope,
-        identity,
-        count: 1,
-        reset_time: now + config.windowMs,
-        create_time: now,
-        update_time: now
-      })
-    }
-    return
-  }
-
-  if (record.count >= config.max) {
-    throw new Error('操作过于频繁，请稍后再试')
-  }
-
-  await col.doc(record._id).update({
-    count: db.command.inc(1),
-    update_time: now
-  })
-}
-
 module.exports = {
   _before() {},
 
@@ -171,7 +90,7 @@ module.exports = {
       if (!WX_APPID || !WX_SECRET) {
         return { code: -1, message: '请先配置微信小程序 WX_APPID 和 WX_SECRET' }
       }
-      await checkRateLimit('login', `${getClientIdentity(this)}:${code || 'empty'}`)
+      await checkRateLimit('login', `${getClientIp(this)}:${code || 'empty'}`, RATE_LIMITS.login)
 
       // 1. 换取 openid
       const wxRes = await uniCloud.httpclient.request(
@@ -244,7 +163,7 @@ module.exports = {
   async loginWithWechat({ code }) {
     try {
       if (!code) return { code: -1, message: '缺少 code' }
-      await checkRateLimit('login', `${getClientIdentity(this)}:${code}`)
+      await checkRateLimit('login', `${getClientIp(this)}:${code}`, RATE_LIMITS.login)
 
       if (!WX_APPID || !WX_SECRET) {
         return { code: -1, message: '服务端未配置微信环境变量，请在 uniCloud 控制台设置 WX_APPID 和 WX_SECRET' }
@@ -388,7 +307,7 @@ module.exports = {
   async submitFeedback({ token, type, content, images = [], contact_type = '', contact_value = '', rel_order_no = '' }) {
     try {
       const user = await verifyUserToken(token)
-      await checkRateLimit('feedback', user._id)
+      await checkRateLimit('feedback', user._id, RATE_LIMITS.feedback)
       const feedbackType = normalizeText(type)
       const feedbackContent = normalizeText(content)
       const feedbackImages = normalizeFeedbackImages(images)
@@ -441,6 +360,8 @@ module.exports = {
             contact: item.contact_value || '',
             orderId: item.rel_order_no || '',
             status: item.status,
+            reply: item.reply || '',
+            replyTime: item.reply_time || '',
             createTime: item.create_time
           })),
           total: countRes.total,

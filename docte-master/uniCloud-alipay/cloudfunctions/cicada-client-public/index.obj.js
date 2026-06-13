@@ -128,6 +128,20 @@ module.exports = {
     }
   },
 
+  // 禁止公开暴露的敏感配置 key（含这些关键字的 key 将被过滤）
+  _sensitiveKeyPatterns: [
+    /secret/i, /password/i, /token/i, /private[_-]?key/i,
+    /api[_-]?key/i, /api[_-]?v\d/i, /cert/i,
+    /wechat[_-]?pay/i, /wx[_-]?pay/i, /wx[_-]?app/i,
+    /wechat[_-]?(app)?secret/i, /wx[_-]?secret/i,
+    /encrypt/i, /sign(ing)?[_-]?key/i, /aes/i, /hmac/i,
+    /credential/i, /auth/i
+  ],
+
+  _isSensitiveKey(key) {
+    return this._sensitiveKeyPatterns.some(pattern => pattern.test(String(key)))
+  },
+
   async getSettings({ keys } = {}) {
     try {
       const query = keys && keys.length > 0
@@ -136,7 +150,10 @@ module.exports = {
       const res = await query.get()
       const settings = {}
       res.data.forEach(item => {
-        settings[item.key] = item.value
+        // 过滤敏感配置项，防止密钥/凭证等泄露到客户端
+        if (!this._isSensitiveKey(item.key)) {
+          settings[item.key] = item.value
+        }
       })
       return { code: 0, data: settings }
     } catch (e) {

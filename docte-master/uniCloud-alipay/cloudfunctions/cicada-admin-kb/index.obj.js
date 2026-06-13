@@ -1,24 +1,5 @@
 const db = uniCloud.database()
-
-async function verifyAdminToken(token, allowedRoles = ['admin']) {
-  if (!token) throw new Error('鉴权失败：非管理人员禁止访问该接口')
-  const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  const user = res.data[0]
-  if (!user || user.disabled || !allowedRoles.includes(user.role)) {
-    throw new Error('鉴权失败：非管理人员禁止访问该接口')
-  }
-  if (Date.now() > user.token_expire) throw new Error('鉴权失败：Token已过期')
-  return user
-}
-
-function pickFields(source = {}, fields = []) {
-  return fields.reduce((result, field) => {
-    if (Object.prototype.hasOwnProperty.call(source, field)) {
-      result[field] = source[field]
-    }
-    return result
-  }, {})
-}
+const { pickFields, verifyAdminToken } = require('cicada-common')
 
 module.exports = {
   async _before() {
@@ -31,7 +12,7 @@ module.exports = {
       const params = this.getParams()[0] || {}
       token = params.token
     }
-    await verifyAdminToken(token, ['admin', 'engineer'])
+    await verifyAdminToken(token, ['admin', 'engineer'], this)
   },
 
   async manageCategories(params) {

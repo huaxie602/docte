@@ -1,22 +1,5 @@
 const db = uniCloud.database()
-const crypto = require('crypto')
-
-function hashPassword(password, salt) {
-  return crypto.pbkdf2Sync(String(password), salt, 100000, 64, 'sha512').toString('hex')
-}
-
-function genSalt() {
-  return crypto.randomBytes(16).toString('hex')
-}
-
-async function verifyAdminToken(token) {
-  if (!token) throw new Error('鉴权失败')
-  const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  const user = res.data[0]
-  if (!user || user.disabled || user.role !== 'admin') throw new Error('无权限')
-  if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
-  return user
-}
+const { hashPassword, genSalt, verifyAdminToken } = require('cicada-common')
 
 async function migrateDevices({ dryRun }) {
   const legacy = await db.collection('cicada_devices').limit(500).get()
@@ -112,7 +95,7 @@ async function findBrokenOrders() {
 module.exports = {
   async run({ token, dryRun = true } = {}) {
     try {
-      await verifyAdminToken(token)
+      await verifyAdminToken(token, ['admin'], this)
       const [devices, feedbacks, staffPasswords, brokenOrders] = await Promise.all([
         migrateDevices({ dryRun }),
         fixFeedbacks({ dryRun }),

@@ -1,6 +1,7 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
 const { assertOrderStatusTransition } = require('cicada-order-workflow')
+const { pickFields, normalizeArray, normalizePage, normalizeText, getClientIp, verifyUserToken, checkRateLimit } = require('cicada-common')
 
 const CREATE_ORDER_LIMIT = { windowMs: 60 * 1000, max: 8 }
 const WECHAT_PAY_API_BASE = 'https://api.mch.weixin.qq.com'
@@ -181,38 +182,6 @@ function getWechatPayConfig() {
     throw new Error(`微信支付暂未配置：${missing.join('、')}`)
   }
   return config
-}
-
-async function verifyUserToken(token) {
-  if (!token) throw new Error('鉴权失败')
-  const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  const user = res.data[0]
-  if (!user || user.disabled) throw new Error('鉴权失败')
-  if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
-  return user
-}
-
-function pickFields(source = {}, fields = []) {
-  return fields.reduce((result, field) => {
-    if (Object.prototype.hasOwnProperty.call(source, field)) {
-      result[field] = source[field]
-    }
-    return result
-  }, {})
-}
-
-function normalizeArray(value) {
-  return Array.isArray(value) ? value.filter(Boolean) : []
-}
-
-function normalizePage(page, pageSize) {
-  const current = Math.max(Number(page) || 1, 1)
-  const size = Math.min(Math.max(Number(pageSize) || 10, 1), 50)
-  return { page: current, pageSize: size }
-}
-
-function normalizeText(value) {
-  return String(value === undefined || value === null ? '' : value).trim()
 }
 
 function normalizePhoneLast4(value) {
@@ -403,47 +372,6 @@ function genOrderNo() {
   const datePart = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
   return 'DR' + datePart + crypto.randomBytes(4).toString('hex').toUpperCase()
 }
-
-async function checkRateLimit(scope, identity, config) {
-  if (!identity || !config) return
-
-  const now = Date.now()
-  const key = `${scope}:${identity}`
-  const col = db.collection('cicada_rate_limits')
-  const found = await col.where({ key }).limit(1).get()
-  const record = found.data[0]
-
-  if (!record || now > record.reset_time) {
-    if (record) {
-      await col.doc(record._id).update({
-        count: 1,
-        reset_time: now + config.windowMs,
-        update_time: now
-      })
-    } else {
-      await col.add({
-        key,
-        scope,
-        identity,
-        count: 1,
-        reset_time: now + config.windowMs,
-        create_time: now,
-        update_time: now
-      })
-    }
-    return
-  }
-
-  if (record.count >= config.max) {
-    throw new Error('操作过于频繁，请稍后再试')
-  }
-
-  await col.doc(record._id).update({
-    count: db.command.inc(1),
-    update_time: now
-  })
-}
-
 function randomNonce(size = 16) {
   return crypto.randomBytes(size).toString('hex')
 }
@@ -654,6 +582,24 @@ module.exports = {
         return { code: -1, msg: '快递单号格式不正确' }
       }
 
+      // 速率限制：未认证用户查询包裹需要限频，防止暴力枚举手机后4位
+      let isOwner = false
+      if (token) {
+        try {
+          const user = await verifyUserToken(token)
+          isOwner = user && user._id
+        } catch (e) {
+          isOwner = false
+        }
+      }
+      if (!isOwner) {
+        const clientIp = getClientIp(this)
+        await checkRateLimit('package-query', clientIp, {
+          windowMs: 5 * 60 * 1000, // 5分钟窗口
+          max: 20 // 最多20次
+        })
+      }
+
       const found = await findOrderByTrackingNo(normalizedTrackingNo)
       if (!found || !found.order) return { code: 0, data: null }
 
@@ -663,16 +609,6 @@ module.exports = {
         shipBackInfo.phone || shipBackInfo.mobile || shipBackInfo.receiverPhone || shipBackInfo.receiver_phone
       )
       const inputLast4 = normalizePhoneLast4(phoneLast4)
-      let isOwner = false
-
-      if (token) {
-        try {
-          const user = await verifyUserToken(token)
-          isOwner = user && order.user_id === user._id
-        } catch (e) {
-          isOwner = false
-        }
-      }
 
       const fullAccess = Boolean(isOwner || (storedLast4 && inputLast4 && storedLast4 === inputLast4))
       const matchedInfo = getShipInfo(order, matchedType)

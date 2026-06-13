@@ -6,19 +6,9 @@ const {
   assertRolePermission,
   getWorkflowConfigForRole,
   hasRolePermission,
-  isKnownRole
+  ALL_ROLES
 } = require('cicada-order-workflow')
-
-async function verifyAdminToken(token) {
-  if (!token) throw new Error('鉴权失败：非管理人员禁止访问该接口')
-  const res = await db.collection('cicada_users').where({ token }).limit(1).get()
-  const user = res.data[0]
-  if (!user || user.disabled || !isKnownRole(user.role)) {
-    throw new Error('鉴权失败：非管理人员禁止访问该接口')
-  }
-  if (Date.now() > user.token_expire) throw new Error('鉴权失败：Token已过期')
-  return user
-}
+const { normalizePage, verifyAdminToken } = require('cicada-common')
 
 async function verifyEngineer(engineer_id) {
   if (!engineer_id) throw new Error('缺少工程师ID')
@@ -27,12 +17,6 @@ async function verifyEngineer(engineer_id) {
     .limit(1)
     .get()
   if (!res.data.length) throw new Error('工程师不存在或已禁用')
-}
-
-function normalizePage(page, pageSize) {
-  const current = Math.max(Number(page) || 1, 1)
-  const size = Math.min(Math.max(Number(pageSize) || 20, 1), 100)
-  return { page: current, pageSize: size }
 }
 
 const SUBSCRIPTION_SCENE_LABELS = {
@@ -708,7 +692,7 @@ module.exports = {
       const params = this.getParams()[0] || {}
       token = params.token
     }
-    this.currentAdminUser = await verifyAdminToken(token)
+    this.currentAdminUser = await verifyAdminToken(token, ALL_ROLES, this)
   },
 
   async getWorkflowConfig(params) {
@@ -735,7 +719,7 @@ module.exports = {
         }
       }
       if (status && !ORDER_STATUS.includes(status)) return { code: -1, msg: '工单状态不正确' }
-      const pagination = normalizePage(page, pageSize)
+      const pagination = normalizePage(page, pageSize, 100)
       const normalizedKeyword = normalizeText(keyword).toLowerCase()
       const normalizedDeviceModel = normalizeText(deviceModel)
       const normalizedInvoiceStatus = normalizeInvoiceStatusFilter(invoiceStatus)
