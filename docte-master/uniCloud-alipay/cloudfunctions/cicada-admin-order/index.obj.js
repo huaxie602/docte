@@ -35,6 +35,105 @@ function normalizePage(page, pageSize) {
   return { page: current, pageSize: size }
 }
 
+const ADMIN_ORDER_LIST_BATCH_SIZE = 200
+const ADMIN_ORDER_FILTER_SCAN_LIMIT = Number(process.env.ADMIN_ORDER_FILTER_SCAN_LIMIT || 2000)
+
+function getDirectTodoMatchCond(todoType = '') {
+  const type = normalizeText(todoType)
+  if (!type) return {}
+  if (type === 'inbound') return { status: dbCmd.in(['pending', 'sent']) }
+  if (type === 'payment') return { payment_status: 'uploaded', total_price: dbCmd.gt(0) }
+  if (type === 'return') return { status: dbCmd.in(['fixing', 'inspecting']), payment_status: 'paid' }
+  return null
+}
+
+function getTodoCountMatchCond(todoType = '') {
+  const directCond = getDirectTodoMatchCond(todoType)
+  if (directCond) return directCond
+  const type = normalizeText(todoType)
+  if (type === 'quote') {
+    return {
+      status: dbCmd.in(['received', 'inspecting', 'fixing']),
+      quote_status: dbCmd.in(['pending', 'draft', 'rejected'])
+    }
+  }
+  if (type === 'invoice') {
+    return {
+      'invoice_info.need_invoice': true,
+      'invoice_info.status': dbCmd.in(['待开票', '开具中', '未发票'])
+    }
+  }
+  if (type === 'exception') return { admin_exception: true }
+  return { status: dbCmd.neq('cancelled') }
+}
+
+function buildDirectAdminOrderMatchCond({ status = '', todoType = '' } = {}) {
+  const todoCond = getDirectTodoMatchCond(todoType)
+  if (todoCond === null) return null
+  const matchCond = { ...todoCond }
+  if (status) matchCond.status = status
+  return matchCond
+}
+
+function collectDeviceModelsFromOrders(orders = []) {
+  return [...new Set(orders
+    .flatMap(order => (order.itemsList || []).map(item => normalizeText(item.product_model)))
+    .filter(Boolean))]
+    .sort()
+}
+
+async function fetchAdminOrderPage(matchCond, pagination) {
+  const offset = (pagination.page - 1) * pagination.pageSize
+  const [countRes, pageRes] = await Promise.all([
+    db.collection('cicada_orders').where(matchCond).count(),
+    db.collection('cicada_orders')
+      .aggregate()
+      .match(matchCond)
+      .sort({ create_time: -1 })
+      .skip(offset)
+      .limit(pagination.pageSize)
+      .lookup({
+        from: 'cicada_order_items',
+        localField: '_id',
+        foreignField: 'order_id',
+        as: 'itemsList'
+      })
+      .end()
+  ])
+  return { total: countRes.total || 0, rawOrders: pageRes.data || [] }
+}
+
+async function enrichAdminOrderForList(order = {}, currentAdmin = {}) {
+  const itemDetail = (order.itemsList && order.itemsList.length > 0) ? order.itemsList[0] : {}
+  const orderWithProofs = await enrichPaymentProofs(order)
+
+  return stripPaymentProofsIfForbidden({
+    ...orderWithProofs,
+    product_name: itemDetail.product_name || '',
+    product_model: itemDetail.product_model || '',
+    fault_desc: itemDetail.fault_desc || '',
+    media_urls: itemDetail.media_urls || [],
+    sn: itemDetail.sn || '',
+    buy_date: itemDetail.buy_date || '',
+    fix_solution: itemDetail.fix_solution || '',
+    itemsList: order.itemsList || []
+  }, currentAdmin)
+}
+
+async function enrichAdminOrdersForList(rawOrders = [], currentAdmin = {}) {
+  return Promise.all(rawOrders.map(order => enrichAdminOrderForList(order, currentAdmin)))
+}
+
+async function countOrdersByMatch(matchCond, todoType = '') {
+  try {
+    const res = await db.collection('cicada_orders').where(matchCond).count()
+    return res.total || 0
+  } catch (e) {
+    const orders = await fetchOrderBatches({ status: dbCmd.neq('cancelled') }, { maxRows: ADMIN_ORDER_FILTER_SCAN_LIMIT })
+    return orders.filter(order => matchesTodoType(order, todoType)).length
+  }
+}
+
 const SUBSCRIPTION_SCENE_LABELS = {
   repair_submitted: '报修已提交',
   order_received: '设备已签收',
@@ -511,18 +610,25 @@ async function enrichPaymentProofs(order = {}) {
   }
 }
 
-async function fetchOrderBatches(matchCond = {}, { withItems = false } = {}) {
-  const batchSize = 500
+async function fetchOrderBatches(matchCond = {}, { withItems = false, maxRows = 0, returnMeta = false } = {}) {
+  const batchSize = ADMIN_ORDER_LIST_BATCH_SIZE
   const orders = []
   let offset = 0
+  let truncated = false
 
   while (true) {
+    const remaining = maxRows ? Math.max(maxRows - orders.length, 0) : batchSize
+    if (maxRows && remaining <= 0) {
+      truncated = true
+      break
+    }
+
     let query = db.collection('cicada_orders')
       .aggregate()
       .match(matchCond)
       .sort({ create_time: -1 })
       .skip(offset)
-      .limit(batchSize)
+      .limit(Math.min(batchSize, remaining || batchSize))
 
     if (withItems) {
       query = query.lookup({
@@ -536,11 +642,11 @@ async function fetchOrderBatches(matchCond = {}, { withItems = false } = {}) {
     const res = await query.end()
     const batch = res.data || []
     orders.push(...batch)
-    if (batch.length < batchSize) break
-    offset += batchSize
+    if (batch.length < Math.min(batchSize, remaining || batchSize)) break
+    offset += batch.length
   }
 
-  return orders
+  return returnMeta ? { orders, truncated } : orders
 }
 
 function padDatePart(value) {
@@ -724,91 +830,95 @@ module.exports = {
   async getAdminOrderList(params) {
     try {
       const currentAdmin = requireAdminPermission(this, 'view_order')
-      let status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array'
-      if (params && Object.keys(params).length) {
-        ({ status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array' } = params)
-      } else {
-        const httpInfo = this.getHttpInfo && this.getHttpInfo()
-        if (httpInfo && httpInfo.body) {
-          const body = JSON.parse(httpInfo.body)
-          ;({ status, page = 1, pageSize = 20, keyword = '', deviceModel = '', invoiceStatus = '', todoType = '', responseMode = 'array' } = body)
-        }
-      }
+      const requestParams = pickParam(this, params)
+      let {
+        status,
+        page = 1,
+        pageSize = 20,
+        keyword = '',
+        deviceModel = '',
+        invoiceStatus = '',
+        todoType = '',
+        responseMode = 'array'
+      } = requestParams
+
       if (status && !ORDER_STATUS.includes(status)) return { code: -1, msg: '工单状态不正确' }
       const pagination = normalizePage(page, pageSize)
       const normalizedKeyword = normalizeText(keyword).toLowerCase()
       const normalizedDeviceModel = normalizeText(deviceModel)
       const normalizedInvoiceStatus = normalizeInvoiceStatusFilter(invoiceStatus)
+      const directMatchCond = buildDirectAdminOrderMatchCond({ status, todoType })
+      const canUseDirectQuery = directMatchCond && !normalizedKeyword && !normalizedDeviceModel && !normalizedInvoiceStatus
 
-      // 构建匹配条件
-      const matchCond = {}
-      if (status) matchCond.status = status
+      let list = []
+      let total = 0
+      let deviceModels = []
+      let truncated = false
 
-      // 使用聚合查询联表获取工单项目；筛选和分页在云函数侧完成，避免前端固定只取前100条。
-      const rawOrders = await fetchOrderBatches(matchCond, { withItems: true })
+      if (canUseDirectQuery) {
+        const pageResult = await fetchAdminOrderPage(directMatchCond, pagination)
+        list = await enrichAdminOrdersForList(pageResult.rawOrders, currentAdmin)
+        total = pageResult.total
+        deviceModels = collectDeviceModelsFromOrders(list)
+      } else {
+        const fallbackMatchCond = {}
+        if (status) fallbackMatchCond.status = status
 
-      // 处理返回数据，提取第一项的字段到外层
-      const orders = await Promise.all(rawOrders.map(async order => {
-        // 提取 lookup 关联到的第一条详情数据
-        const itemDetail = (order.itemsList && order.itemsList.length > 0) ? order.itemsList[0] : {}
-        const orderWithProofs = await enrichPaymentProofs(order)
+        const fallback = await fetchOrderBatches(fallbackMatchCond, {
+          withItems: true,
+          maxRows: ADMIN_ORDER_FILTER_SCAN_LIMIT,
+          returnMeta: true
+        })
+        truncated = fallback.truncated
 
-        return stripPaymentProofsIfForbidden({
-          ...orderWithProofs,
-          // 把详情里的字段平铺到最外层
-          product_name: itemDetail.product_name || '',
-          product_model: itemDetail.product_model || '',
-          fault_desc: itemDetail.fault_desc || '',
-          media_urls: itemDetail.media_urls || [],
-          sn: itemDetail.sn || '',
-          buy_date: itemDetail.buy_date || '',
-          fix_solution: itemDetail.fix_solution || '',
-          // 保留原始的 itemsList 数组供前端使用
-          itemsList: order.itemsList || []
-        }, currentAdmin)
-      }))
+        const enrichedOrders = await enrichAdminOrdersForList(fallback.orders, currentAdmin)
+        const filteredOrders = enrichedOrders.filter(order => {
+          const items = Array.isArray(order.itemsList) ? order.itemsList : []
+          const productModels = items.map(item => normalizeText(item.product_model)).filter(Boolean)
+          const productSns = items.map(item => normalizeText(item.sn)).filter(Boolean)
+          const invoiceInfo = order.invoice_info || {}
+          const orderInvoiceStatus = normalizeInvoiceStatusFilter(invoiceInfo.status || (invoiceInfo.need_invoice ? '待开票' : '无需开票'))
+          const searchableText = [
+            order.order_no,
+            order._id,
+            order.user_id,
+            order.product_name,
+            order.product_model,
+            order.fault_desc,
+            order.ship_back_info && order.ship_back_info.name,
+            order.ship_back_info && order.ship_back_info.phone,
+            order.ship_back_info && order.ship_back_info.unit,
+            order.ship_out_info && order.ship_out_info.logistics_no,
+            order.ship_back_info && order.ship_back_info.logistics_no,
+            ...productModels,
+            ...productSns
+          ].filter(Boolean).join(' ').toLowerCase()
 
-      const filteredOrders = orders.filter(order => {
-        const items = Array.isArray(order.itemsList) ? order.itemsList : []
-        const productModels = items.map(item => normalizeText(item.product_model)).filter(Boolean)
-        const productSns = items.map(item => normalizeText(item.sn)).filter(Boolean)
-        const invoiceInfo = order.invoice_info || {}
-        const orderInvoiceStatus = normalizeInvoiceStatusFilter(invoiceInfo.status || (invoiceInfo.need_invoice ? '待开票' : '无需开票'))
-        const searchableText = [
-          order.order_no,
-          order._id,
-          order.user_id,
-          order.product_name,
-          order.product_model,
-          order.fault_desc,
-          order.ship_back_info && order.ship_back_info.name,
-          order.ship_back_info && order.ship_back_info.phone,
-          order.ship_back_info && order.ship_back_info.unit,
-          order.ship_out_info && order.ship_out_info.logistics_no,
-          order.ship_back_info && order.ship_back_info.logistics_no,
-          ...productModels,
-          ...productSns
-        ].filter(Boolean).join(' ').toLowerCase()
+          return matchesTodoType(order, todoType) &&
+            (!normalizedKeyword || searchableText.includes(normalizedKeyword)) &&
+            (!normalizedDeviceModel || productModels.includes(normalizedDeviceModel)) &&
+            (!normalizedInvoiceStatus || orderInvoiceStatus === normalizedInvoiceStatus)
+        })
 
-        return matchesTodoType(order, todoType) &&
-          (!normalizedKeyword || searchableText.includes(normalizedKeyword)) &&
-          (!normalizedDeviceModel || productModels.includes(normalizedDeviceModel)) &&
-          (!normalizedInvoiceStatus || orderInvoiceStatus === normalizedInvoiceStatus)
-      })
+        total = filteredOrders.length
+        const start = (pagination.page - 1) * pagination.pageSize
+        list = filteredOrders.slice(start, start + pagination.pageSize)
+        deviceModels = collectDeviceModelsFromOrders(filteredOrders)
+      }
 
-      const total = filteredOrders.length
-      const start = (pagination.page - 1) * pagination.pageSize
-      const list = filteredOrders.slice(start, start + pagination.pageSize)
-      const deviceModels = [...new Set(filteredOrders
-        .flatMap(order => (order.itemsList || []).map(item => normalizeText(item.product_model)))
-        .filter(Boolean))]
-        .sort()
+      const pagePayload = {
+        list,
+        total,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        deviceModels,
+        truncated,
+        scanLimit: truncated ? ADMIN_ORDER_FILTER_SCAN_LIMIT : undefined
+      }
 
       return {
         code: 0,
-        data: responseMode === 'page'
-          ? { list, total, page: pagination.page, pageSize: pagination.pageSize, deviceModels }
-          : list
+        data: responseMode === 'page' ? pagePayload : list
       }
     } catch (e) {
       return { code: -1, msg: e.message }
@@ -1548,7 +1658,6 @@ module.exports = {
   async getTodoSummary(params) {
     try {
       requireAdminPermission(this, 'get_stats')
-      const orders = await fetchOrderBatches({ status: dbCmd.neq('cancelled') })
       const groups = [
         { key: 'inbound', title: '待签收', desc: '客户已提交或运输中的工单', count: 0 },
         { key: 'quote', title: '待报价', desc: '已签收/处理中但未发布报价', count: 0 },
@@ -1558,9 +1667,8 @@ module.exports = {
         { key: 'exception', title: '异常工单', desc: '需要人工介入处理', count: 0 }
       ]
 
-      groups.forEach(group => {
-        group.count = orders.filter(order => matchesTodoType(order, group.key)).length
-      })
+      const counts = await Promise.all(groups.map(group => countOrdersByMatch(getTodoCountMatchCond(group.key), group.key)))
+      groups.forEach((group, index) => { group.count = counts[index] || 0 })
 
       return { code: 0, data: { groups } }
     } catch (e) {
