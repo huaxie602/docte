@@ -105,7 +105,7 @@ export const getFeePolicy = async () => {
 	return settingDoc('收费指南', settings.fee_description || settings.fee_policy)
 }
 
-export const getGuide = (type) => getPublicCloudObject().getGuide({ type }).then(unwrapCloudResult)
+export const getGuide = (type) => getPublicCloudObject().getGuide({ type, forceRefresh: true }).then(unwrapCloudResult)
 
 export const getSurveyPoster = async () => {
 	const settings = await getPublicCloudObject().getSettings({ keys: ['survey_poster_url'] }).then(unwrapCloudResult)

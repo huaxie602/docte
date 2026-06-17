@@ -3,13 +3,33 @@
   "数据": [
     {
       "key": "warranty_policy",
-      "value": "1. 保修期内免费维修\n2. 保修期外收取材料费和人工费\n3. 人为损坏不在保修范围内",
-      "update_time": 1747656000000
+      "value": "本店售出的 CICADA 思科达牙科设备提供 90 天免费保修服务。保修范围覆盖正常使用下出现的非人为性能故障，常见设备包括光固化系列、根管系列、种植系列、手机系列、树脂加热器、医用放大镜、便携打磨机和牙科医师椅等。人为跌落、进水、私自拆机、非原厂耗材或异常消毒导致的损坏不在免费保修范围内。",
+      "update_time": 1781347200000
     },
     {
       "key": "fee_description",
-      "value": "1. 检测费：免费\n2. 维修费：根据故障情况收取\n3. 配件费：按实际更换配件收取\n4. 上门费：市区内免费，郊区收取50元",
-      "update_time": 1747656000000
+      "value": "1. 检测费：免费。\n2. 保修期内：符合免费保修条件的设备免收维修费。\n3. 保修期外或非保修范围：根据检测结果收取配件费和人工维修费，报价确认后再维修。\n4. 易耗件、导光棒、测量线、密封圈、轴承、喷嘴等配件按实际更换情况计费。",
+      "update_time": 1781347200000
+    },
+    {
+      "key": "company_name",
+      "value": "Foshan Cicada Dental Instrument Co., Ltd",
+      "update_time": 1781347200000
+    },
+    {
+      "key": "contact_phone",
+      "value": "+86-0757-85775667",
+      "update_time": 1781347200000
+    },
+    {
+      "key": "contact_email",
+      "value": "info@cicadadental.com",
+      "update_time": 1781347200000
+    },
+    {
+      "key": "contact_address",
+      "value": "B5-2F, Guangdong New Light Source Industrial Base, South of Luocun Avenue, Nanhai, Foshan, Guangdong",
+      "update_time": 1781347200000
     }
   ]
 }

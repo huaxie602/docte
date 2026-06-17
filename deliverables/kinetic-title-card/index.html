@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kinetic Title Card</title>
+  </head>
+  <body>
+    <div data-hf-id="hf-ejtp" id="title-card" data-composition-id="kinetic-title-card" data-width="1920" data-height="1080" data-start="0" data-duration="6" data-track-index="0">
+      <div data-hf-id="hf-tan6" class="stage">
+        <div data-hf-id="hf-4sys" class="texture" data-layout-ignore=""></div>
+        <div data-hf-id="hf-t8wl" class="stripe stripe-red" data-layout-ignore=""></div>
+        <div data-hf-id="hf-9wzm" class="stripe stripe-yellow" data-layout-ignore=""></div>
+        <div data-hf-id="hf-p706" class="ghost ghost-top" data-layout-ignore="">KINETIC</div>
+        <div data-hf-id="hf-4115" class="ghost ghost-bottom" data-layout-ignore="">TYPE</div>
+
+        <div data-hf-id="hf-cn5c" class="scene-content">
+          <div data-hf-id="hf-iiwo" class="kicker-row">
+            <span data-hf-id="hf-ypim" class="kicker">HyperFrames</span>
+            <span data-hf-id="hf-6o6j" class="rule"></span>
+            <span data-hf-id="hf-e156" class="kicker">Title System 001</span>
+          </div>
+
+          <div data-hf-id="hf-f5ph" class="headline-wrap">
+            <div data-hf-id="hf-izgt" class="word word-make">MAKE</div>
+            <div data-hf-id="hf-tmyb" class="word word-it">IT</div>
+            <div data-hf-id="hf-9rtz" class="word word-move">MOVE</div>
+          </div>
+
+          <div data-hf-id="hf-wwlm" class="footer-row">
+            <span data-hf-id="hf-vsag">kinetic type</span>
+            <span data-hf-id="hf-1upj">00:06</span>
+            <span data-hf-id="hf-20re">1920 x 1080</span>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-td92" class="burst burst-one" data-layout-ignore=""></div>
+        <div data-hf-id="hf-ubug" class="burst burst-two" data-layout-ignore=""></div>
+      </div>
+
+      <style>
+        html,
+        body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+          background: #0e0d0b;
+        }
+
+        #title-card {
+          width: 1920px;
+          height: 1080px;
+          overflow: hidden;
+          background: #0e0d0b;
+          color: #fff7d6;
+          font-family: Montserrat, sans-serif;
+          position: relative;
+        }
+
+        .stage {
+          width: 100%;
+          height: 100%;
+          position: relative;
+          overflow: hidden;
+          animation: texture-glow 6s ease-in-out both;
+          background:
+            linear-gradient(90deg, rgba(255, 247, 214, 0.05) 1px, transparent 1px) 0 0 / 80px 80px,
+            linear-gradient(0deg, rgba(255, 247, 214, 0.04) 1px, transparent 1px) 0 0 / 80px 80px,
+            #0e0d0b;
+        }
+
+        .scene-content {
+          width: 100%;
+          height: 100%;
+          padding: 96px 126px 82px;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          gap: 44px;
+          position: relative;
+          z-index: 5;
+        }
+
+        .kicker-row,
+        .footer-row {
+          display: flex;
+          align-items: center;
+          gap: 28px;
+          font-family: Inter, sans-serif;
+          text-transform: uppercase;
+          font-size: 28px;
+          line-height: 1;
+          color: #fff7d6;
+        }
+
+        .kicker-row {
+          font-weight: 800;
+        }
+
+        .footer-row {
+          justify-content: space-between;
+          font-size: 24px;
+          font-weight: 900;
+        }
+
+        .rule {
+          height: 10px;
+          flex: 1;
+          background: #ffd60a;
+          transform-origin: left center;
+          animation: rule-in 6s both;
+        }
+
+        .headline-wrap {
+          display: grid;
+          grid-template-columns: 1fr 0.48fr;
+          grid-template-rows: auto auto;
+          align-items: end;
+          column-gap: 42px;
+          row-gap: 0;
+          transform: rotate(-2deg);
+          animation: headline-pulse 6s both;
+        }
+
+        .word {
+          text-transform: uppercase;
+          line-height: 0.82;
+          letter-spacing: 0;
+          color: #fff7d6;
+          text-shadow: 14px 14px 0 #1b1a17;
+          white-space: nowrap;
+          font-weight: 900;
+        }
+
+        .word-make {
+          grid-column: 1;
+          grid-row: 1;
+          font-size: 244px;
+          color: #ffd60a;
+          animation: make-motion 6s both;
+        }
+
+        .word-it {
+          grid-column: 2;
+          grid-row: 1 / span 2;
+          font-size: 326px;
+          color: #e63946;
+          writing-mode: vertical-rl;
+          transform: rotate(180deg);
+          justify-self: end;
+          align-self: stretch;
+          display: flex;
+          justify-content: center;
+          animation: it-motion 6s both;
+        }
+
+        .word-move {
+          grid-column: 1;
+          grid-row: 2;
+          font-size: 332px;
+          animation: move-motion 6s both;
+        }
+
+        .stripe,
+        .ghost,
+        .burst,
+        .texture {
+          position: absolute;
+        }
+
+        .stripe {
+          width: 2400px;
+          height: 168px;
+          left: -220px;
+          z-index: 1;
+        }
+
+        .stripe-red {
+          top: 212px;
+          background: #e63946;
+          transform: rotate(-13deg);
+          animation: stripe-red-motion 6s both;
+        }
+
+        .stripe-yellow {
+          bottom: 174px;
+          background: #ffd60a;
+          transform: rotate(8deg);
+          animation: stripe-yellow-motion 6s both;
+        }
+
+        .ghost {
+          z-index: 2;
+          color: rgba(255, 247, 214, 0.055);
+          font-size: 260px;
+          line-height: 0.8;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
+        .ghost-top {
+          top: 26px;
+          left: -34px;
+          animation: ghost-top-drift 6s linear both;
+        }
+
+        .ghost-bottom {
+          right: -26px;
+          bottom: 30px;
+          animation: ghost-bottom-drift 6s linear both;
+        }
+
+        .burst {
+          z-index: 4;
+          background: #fff7d6;
+          width: 36px;
+          height: 360px;
+          transform-origin: center;
+        }
+
+        .burst-one {
+          right: 260px;
+          top: 152px;
+          transform: rotate(42deg);
+          animation: burst-one-motion 6s both;
+        }
+
+        .burst-two {
+          left: 214px;
+          bottom: 144px;
+          height: 280px;
+          background: #e63946;
+          transform: rotate(-52deg);
+          animation: burst-two-motion 6s both;
+        }
+
+        .texture {
+          inset: 0;
+          z-index: 3;
+          opacity: 0.08;
+          background-image:
+            repeating-linear-gradient(0deg, rgba(255, 247, 214, 0.35) 0 1px, transparent 1px 5px),
+            radial-gradient(circle at 20% 20%, rgba(255, 214, 10, 0.65), transparent 18%),
+            radial-gradient(circle at 82% 72%, rgba(230, 57, 70, 0.65), transparent 20%);
+          mix-blend-mode: screen;
+          animation: texture-motion 6s both;
+        }
+
+        .kicker {
+          animation: kicker-in 6s both;
+        }
+
+        .kicker-row .kicker:nth-child(3) {
+          animation-delay: 0.08s;
+        }
+
+        .footer-row span {
+          animation: footer-in 6s both;
+        }
+
+        .footer-row span:nth-child(2) {
+          animation-delay: 0.08s;
+        }
+
+        .footer-row span:nth-child(3) {
+          animation-delay: 0.16s;
+        }
+
+        @keyframes stripe-red-motion {
+          0% { opacity: 0; transform: translateX(-900px) rotate(-18deg); }
+          9%, 88% { opacity: 1; transform: translateX(0) rotate(-13deg); }
+          96%, 100% { opacity: 0; transform: translateX(0) rotate(-13deg); }
+        }
+
+        @keyframes stripe-yellow-motion {
+          0%, 1% { opacity: 0; transform: translateX(900px) rotate(14deg); }
+          10%, 88% { opacity: 1; transform: translateX(0) rotate(8deg); }
+          96%, 100% { opacity: 0; transform: translateX(0) rotate(8deg); }
+        }
+
+        @keyframes texture-motion {
+          0% { opacity: 0; }
+          5% { opacity: 0.08; }
+          19%, 92% { opacity: 0.13; }
+          98%, 100% { opacity: 0; }
+        }
+
+        @keyframes kicker-in {
+          0%, 3% { opacity: 0; transform: translateY(-46px); }
+          11%, 90% { opacity: 1; transform: translateY(0); }
+          96%, 100% { opacity: 0; transform: translateY(0); }
+        }
+
+        @keyframes rule-in {
+          0%, 5% { transform: scaleX(0); }
+          12%, 90% { transform: scaleX(1); opacity: 1; }
+          96%, 100% { opacity: 0; transform: scaleX(1); }
+        }
+
+        @keyframes make-motion {
+          0%, 8% { opacity: 0; transform: translate(-460px, 40px) rotate(-7deg); }
+          17%, 86% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+          93%, 100% { opacity: 0; transform: translate(-520px, 0) rotate(-9deg); }
+        }
+
+        @keyframes it-motion {
+          0%, 12% { opacity: 0; transform: rotate(180deg) translateY(-520px) scale(1.18); }
+          22%, 87% { opacity: 1; transform: rotate(180deg) translateY(0) scale(1); }
+          94%, 100% { opacity: 0; transform: rotate(180deg) translateY(580px) scale(1); }
+        }
+
+        @keyframes move-motion {
+          0%, 16% { opacity: 0; transform: translate(520px, 76px) rotate(5deg); }
+          26%, 87% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+          95%, 100% { opacity: 0; transform: translate(560px, 0) rotate(6deg); }
+        }
+
+        @keyframes burst-one-motion {
+          0%, 19% { opacity: 0; transform: rotate(42deg) scaleY(0); }
+          24%, 58% { opacity: 1; transform: rotate(42deg) scaleY(1); }
+          68%, 90% { opacity: 1; transform: rotate(48deg) scaleY(1); }
+          96%, 100% { opacity: 0; transform: rotate(48deg) scaleY(1); }
+        }
+
+        @keyframes burst-two-motion {
+          0%, 22% { opacity: 0; transform: rotate(-52deg) scaleY(0); }
+          27%, 60% { opacity: 1; transform: rotate(-52deg) scaleY(1); }
+          72%, 90% { opacity: 1; transform: rotate(-45deg) scaleY(1); }
+          96%, 100% { opacity: 0; transform: rotate(-45deg) scaleY(1); }
+        }
+
+        @keyframes footer-in {
+          0%, 24% { opacity: 0; transform: translateY(38px); }
+          33%, 90% { opacity: 1; transform: translateY(0); }
+          96%, 100% { opacity: 0; transform: translateY(0); }
+        }
+
+        @keyframes ghost-top-drift {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(84px); }
+        }
+
+        @keyframes ghost-bottom-drift {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-96px); }
+        }
+
+        @keyframes headline-pulse {
+          0%, 64% { transform: rotate(-2deg) scale(1); }
+          69% { transform: rotate(-2deg) scale(1.025); }
+          75%, 100% { transform: rotate(-2deg) scale(1); }
+        }
+      </style>
+      <script>
+        window.__timelines = window.__timelines || {};
+        window.__timelines["kinetic-title-card"] = {
+          duration: () => 6,
+          pause() { return this; },
+          seek() { return this; },
+          totalTime() { return this; }
+        };
+      </script>
+    </div>
+  </body>
+</html>

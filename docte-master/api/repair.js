@@ -18,12 +18,20 @@ const clearAuthStorage = () => {
   uni.removeStorageSync('isLoggedIn')
 }
 
+const hasAuthToken = () => Boolean(uni.getStorageSync('token'))
+
+const isAuthFailure = (result = {}) => {
+  const code = Number(result.code)
+  const message = String(result.message || result.msg || '')
+  return [401, 1004, 100401].includes(code) || /鉴权失败|Token已过期|token expired|unauthorized|登录已过期|请重新登录/i.test(message)
+}
+
 const unwrapCloudResult = (result = {}) => {
   if (!result || typeof result !== 'object') return result
   if (result.code === 0 || result.code === undefined) {
     return result.data === undefined ? result : result.data
   }
-  if ([401, 1004, 100401].includes(Number(result.code))) {
+  if (isAuthFailure(result)) {
     clearAuthStorage()
   }
   throw new Error(result.message || result.msg || '请求失败')
@@ -93,6 +101,10 @@ const normalizeSubmitRepairPayload = (data = {}) => {
 }
 
 export const getRepairList = (params = {}) => {
+  if (!hasAuthToken()) {
+    const pagination = normalizePageParams(params)
+    return Promise.resolve({ list: [], total: 0, page: pagination.page, pageSize: pagination.pageSize })
+  }
   return getCloudObject().getOrderList(withToken(normalizePageParams(params))).then(unwrapCloudResult)
 }
 

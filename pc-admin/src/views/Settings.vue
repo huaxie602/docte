@@ -179,7 +179,7 @@
 <script setup>
 import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { saveSettings, getSettings, getGuides, updateGuide, uploadGuideFile, uploadSurveyPoster } from '../api/admin.js'
+import { saveSettings, getSettings, getGuides, updateGuide, uploadGuideFile, getGuideFileUrl, uploadSurveyPoster } from '../api/admin.js'
 
 const defaultPrintConfig = () => ({
   title: '设备维修回寄单',
@@ -368,7 +368,7 @@ const guidePreviewVisible = ref(false)
 const guidePreviewTarget = ref(null)
 const openGuidePreview = (row) => { guidePreviewTarget.value = row; guidePreviewVisible.value = true }
 const isWebUrl = (url = '') => /^https?:\/\//i.test(url)
-const openGuideFile = (row) => {
+const openGuideFile = async (row) => {
   if (!row.fileUrl) {
     ElMessage.warning('该教程还未上传文档')
     return
@@ -377,7 +377,16 @@ const openGuideFile = (row) => {
     window.open(row.fileUrl, '_blank', 'noopener,noreferrer')
     return
   }
-  ElMessage.info('该文件已上传到云存储，请在小程序端打开查看')
+  try {
+    const token = localStorage.getItem('adminToken')
+    const data = await getGuideFileUrl(token, row.fileUrl)
+    const url = data.tempFileURL || data.url
+    if (!url) throw new Error('临时链接为空')
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch (error) {
+    console.error('open guide file failed:', error)
+    ElMessage.error(error.message || '文档打开失败')
+  }
 }
 
 onMounted(() => {

@@ -1,0 +1,11 @@
+{
+  "name": "kinetic-title-card",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "hyperframes lint",
+    "inspect": "hyperframes inspect --samples 12 --at 1.2,2.8,4.4",
+    "preview": "hyperframes preview --port 3017",
+    "render": "hyperframes render --quality standard --output renders/kinetic-title-card.mp4"
+  }
+}

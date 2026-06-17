@@ -5,7 +5,8 @@
   "description": "牙医仪器检修用户端微信小程序",
   "scripts": {
     "dev:mp-weixin": "cross-env UNI_INPUT_DIR=. UNI_OUTPUT_DIR=unpackage/dist/dev/mp-weixin uni -p mp-weixin",
-    "build:mp-weixin": "cross-env UNI_INPUT_DIR=. UNI_OUTPUT_DIR=unpackage/dist/build/mp-weixin uni build -p mp-weixin",
+    "build:mp-weixin": "cross-env UNI_INPUT_DIR=. UNI_OUTPUT_DIR=unpackage/dist/build/mp-weixin uni build -p mp-weixin && node scripts/copy-static-to-mp-weixin.mjs",
+    "copy-static:mp-weixin": "node scripts/copy-static-to-mp-weixin.mjs",
     "check": "npm run build:mp-weixin"
   },
   "dependencies": {

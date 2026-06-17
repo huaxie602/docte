@@ -75,6 +75,8 @@ const contentApi = readProjectFile('docte-master/api/content.js')
 const productApi = readProjectFile('docte-master/api/product.js')
 const repairApi = readProjectFile('docte-master/api/repair.js')
 const cloudUtil = readProjectFile('docte-master/utils/cloud.js')
+const pagesJson = readProjectFile('docte-master/pages.json')
+const indexPage = readProjectFile('docte-master/pages/index/index.vue')
 
 const projectUrl = (path) => new URL(`../${path}`, import.meta.url)
 
@@ -121,5 +123,12 @@ for (const functionName of ['cicada-client-user', 'cicada-maintenance']) {
   assert.match(pkg, new RegExp(`"name"\\s*:\\s*"${functionName}"`))
   assert.match(pkg, new RegExp(`"path"\\s*:\\s*"/${functionName}"`))
 }
+
+assert.ok(existsSync(projectUrl('docte-master/pages/search/index.vue')), 'missing search page')
+assert.match(pagesJson, /"path"\s*:\s*"pages\/search\/index"/)
+assert.match(pagesJson, /"navigationStyle"\s*:\s*"custom"/)
+assert.match(indexPage, /\/pages\/search\/index/)
+assert.match(indexPage, /pendingTrackOrderId/)
+assert.doesNotMatch(indexPage, /搜索功能正在优化中|待后端接口建立后恢复/)
 
 console.log('[ok] launch readiness feature checks passed')

@@ -1,0 +1,79 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "type", "content", "status"],
+  "properties": {
+    "_id": {
+      "description": "记录ID",
+      "bsonType": "objectId"
+    },
+    "user_id": {
+      "description": "用户ID",
+      "bsonType": "string"
+    },
+    "type": {
+      "description": "反馈类型",
+      "bsonType": "string",
+      "enum": ["投诉", "建议"]
+    },
+    "content": {
+      "description": "反馈内容",
+      "bsonType": "string"
+    },
+    "images": {
+      "description": "图片列表",
+      "bsonType": "array",
+      "items": {
+        "bsonType": "string"
+      }
+    },
+    "contact_type": {
+      "description": "联系方式类型",
+      "bsonType": "string"
+    },
+    "contact_value": {
+      "description": "联系方式值",
+      "bsonType": "string"
+    },
+    "rel_order_no": {
+      "description": "关联工单号",
+      "bsonType": "string"
+    },
+    "status": {
+      "description": "状态",
+      "bsonType": "string",
+      "enum": ["待处理", "处理中", "已回复", "已完成"]
+    },
+    "reply": {
+      "description": "客服回复内容",
+      "bsonType": "string"
+    },
+    "reply_time": {
+      "description": "客服回复时间",
+      "bsonType": "timestamp"
+    },
+    "handle_remark": {
+      "description": "后台处理备注",
+      "bsonType": "string"
+    },
+    "handle_time": {
+      "description": "后台处理时间",
+      "bsonType": "timestamp"
+    },
+    "handle_user_id": {
+      "description": "后台处理人ID",
+      "bsonType": "string"
+    },
+    "handle_user_name": {
+      "description": "后台处理人名称",
+      "bsonType": "string"
+    },
+    "update_time": {
+      "description": "更新时间",
+      "bsonType": "timestamp"
+    },
+    "create_time": {
+      "description": "创建时间",
+      "bsonType": "timestamp"
+    }
+  }
+}

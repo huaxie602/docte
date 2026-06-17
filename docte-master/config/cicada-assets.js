@@ -1,14 +1,16 @@
-// Centralized CDN asset URLs for company branding, posters and QR images.
-// File names are kept aligned with cdn-assets/cicada for easier maintenance.
+// Centralized package asset URLs for company branding, posters and QR images.
+// Keep these local so the WeChat simulator and mini program do not depend on
+// external CDN availability or download-domain configuration for core UI art.
 export const cicadaAssets = {
-	brandToothBlue: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/brand-cicada-tooth-blue.png',
-	brandToothBlueOriginal: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/brand-cicada-tooth-blue-original.png',
-	logoMark: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/logo-cicada-mark.jpg',
-	logoFull: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/logo-cicada-full.jpg',
+	brandToothBlue: '/static/brand-cicada-tooth-blue.png',
+	brandToothBlueOriginal: '/static/brand-cicada-tooth-blue-original.png',
+	logoMark: '/static/logo-cicada-mark.jpg',
+	logoFull: '/static/logo-cicada-full.jpg',
 	logoNew: '/static/new-logo.png',
-	photoFactory: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/photo-factory.jpg',
-	photoBuilding: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/photo-building.jpg',
-	qrWechat: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/qr-wechat.jpg',
-	surveyPoster: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/survey-poster.png',
-	surveyQrWechat: 'https://mp-f0350304-ff3b-4fb8-afcb-ac5e3253da2a.cdn.bspapp.com/survey-qr-wechat.jpg'
+	logoBanner: '/static/logo-banner.jpg',
+	photoFactory: '/static/photo-factory.jpg',
+	photoBuilding: '/static/photo-building.jpg',
+	qrWechat: '/static/qr-wechat.jpg',
+	surveyPoster: '/static/survey-poster.png',
+	surveyQrWechat: '/static/survey-qr-wechat.jpg'
 }

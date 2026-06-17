@@ -36,8 +36,24 @@ export const guides = [
 export const defaultReceiver = [
 	{ label: '收件公司', value: '佛山市思科达医疗器械有限公司' },
 	{ label: '收件人', value: '姚兵' },
-	{ label: '收件电话', value: '13929198537' },
+	{ label: '收件电话', value: '0757-85775667' },
 	{ label: '收件地址', value: '广东省佛山市南海区狮山镇罗村广东新光源核心基地B5座五楼' }
+]
+
+export const cicadaContact = {
+	companyName: '佛山市思科达医疗器械有限公司',
+	officialHotline: '0757-85775667',
+	afterSalesManager: '15918055555',
+	address: '广东省佛山市南海区狮山镇罗村广东新光源核心基地B5座五楼',
+	workTime: '08:00 - 21:00'
+}
+
+export const repairSafetyTips = [
+	'若发现故障，请勿私自拆卸。',
+	'请写明故障现象和回邮信息（地址、联系人和联系电话）。',
+	'需整套寄回维修，运费由发货方支付，回邮运费由 CICADA 思科达承担。',
+	'如超过质保期，需要由发货方负责维修费用。',
+	`厂家地址：${cicadaContact.address}`
 ]
 
 export const companyStats = [
@@ -102,7 +118,6 @@ export const moduleMap = {
 	'guide-query': { title: '查询指南', subtitle: '查看进度查询和结果确认办法' },
 	'guide-invoice': { title: '开票指南', subtitle: '了解发票申请、抬头和寄送说明' },
 	invoices: { title: '发票与开票', subtitle: '申请开票、查看进度与复制电子发票' },
-	contact: { title: '联系我们', subtitle: '客服热线、工作时间和寄修地址' },
 	orders: { title: '维修订单', subtitle: '查看全部维修记录与处理状态' },
 	products: { title: '我的产品', subtitle: '已登记设备与保修状态' },
 	address: { title: '收货地址', subtitle: '管理默认回寄地址与单位信息' },

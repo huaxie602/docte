@@ -26,16 +26,6 @@
 		</view>
 
 		<view class="page-body">
-			<view class="brand-bar">
-				<view class="brand-left">
-					<image class="brand-logo" :src="cicadaAssets.logoMark" mode="aspectFit"></image>
-					<view class="brand-copy">
-						<text class="brand-name">CICADA Dental</text>
-						<text class="brand-subname">登煌医疗 · 思科达</text>
-					</view>
-				</view>
-			</view>
-
 			<view class="company-hero">
 				<image class="hero-image" :src="cicadaAssets.photoFactory" mode="aspectFill"></image>
 				<view class="hero-mask"></view>
@@ -118,7 +108,7 @@
 					<image class="qr-image" :src="cicadaAssets.qrWechat" mode="aspectFill" show-menu-by-longpress></image>
 				</view>
 				<text class="follow-title">了解产品与售后支持</text>
-				<text class="follow-desc">长按识别二维码关注官方公众号，或通过电话、邮箱咨询产品资料、维修保养与售后服务。</text>
+				<text class="follow-desc">长按识别二维码关注官方服务号，或通过电话、邮箱咨询产品资料、维修保养与售后服务。</text>
 				<view class="contact-row">
 					<view class="contact-pill tap" @click="callPhone">电话咨询</view>
 					<view class="contact-pill ghost tap" @click="copyEmail">复制邮箱</view>
@@ -361,48 +351,6 @@ const copyEmail = () => {
 	height: 30rpx;
 	border: 4rpx solid #000000;
 	border-radius: 999rpx;
-}
-
-.brand-bar {
-	margin-top: 0;
-	margin-bottom: 28rpx;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-
-.brand-left {
-	display: flex;
-	align-items: center;
-	gap: 16rpx;
-}
-
-.brand-logo {
-	width: 92rpx;
-	height: 92rpx;
-	border-radius: 18rpx;
-}
-
-.brand-copy {
-	padding-left: 16rpx;
-	border-left: 2rpx solid #C4D1E4;
-	display: flex;
-	flex-direction: column;
-	gap: 6rpx;
-}
-
-.brand-name {
-	font-size: 30rpx;
-	font-weight: 800;
-	line-height: 1.1;
-	color: #0F1F3A;
-	letter-spacing: 1.2rpx;
-}
-
-.brand-subname {
-	font-size: 22rpx;
-	line-height: 1.2;
-	color: #6B7C97;
 }
 
 .icon-phone,

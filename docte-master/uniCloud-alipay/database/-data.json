@@ -42,21 +42,33 @@
   "cicada_product_categories": [
     {
       "_id": "cat001",
-      "category_name": "手机",
+      "category_name": "光固化系列",
       "status": "上架",
       "sort": 1
     },
     {
       "_id": "cat002",
-      "category_name": "平板电脑",
+      "category_name": "根管系列",
       "status": "上架",
       "sort": 2
     },
     {
       "_id": "cat003",
-      "category_name": "笔记本电脑",
+      "category_name": "种植系列",
       "status": "上架",
       "sort": 3
+    },
+    {
+      "_id": "cat004",
+      "category_name": "手机系列",
+      "status": "上架",
+      "sort": 4
+    },
+    {
+      "_id": "cat005",
+      "category_name": "其他产品",
+      "status": "上架",
+      "sort": 5
     }
   ]
 }

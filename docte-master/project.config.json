@@ -1,7 +1,17 @@
 {
   "description": "牙医仪器检修用户端微信小程序配置",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      { "type": "file", "value": "static/8145c656de57e845a53442df4ba93dbe.jpg" },
+      { "type": "file", "value": "static/brand-cicada-tooth-blue-original.png" },
+      { "type": "file", "value": "static/cicada-service-logo.png" },
+      { "type": "file", "value": "static/cicada-wordmark.png" },
+      { "type": "file", "value": "static/default-user-avatar.png" },
+      { "type": "file", "value": "static/logo.png" },
+      { "type": "file", "value": "static/official-account-icon.png" },
+      { "type": "file", "value": "static/photo-building.jpg" },
+      { "type": "file", "value": "static/survey-qr-wechat.jpg" }
+    ],
     "include": []
   },
   "setting": {
@@ -9,7 +19,7 @@
     "es6": true,
     "postcss": false,
     "minified": true,
-    "minifyWXML": false,
+    "minifyWXML": true,
     "newFeature": true,
     "bigPackageSizeSupport": true,
     "compileWorklet": false,
@@ -23,6 +33,7 @@
     "disableUseStrict": false,
     "useCompilerPlugins": false,
     "condition": false,
+    "lazyCodeLoading": "requiredComponents",
     "swc": false,
     "disableSWC": true,
     "babelSetting": {

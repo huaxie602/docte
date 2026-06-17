@@ -1,6 +1,6 @@
 {
   "bsonType": "object",
-  "required": ["category", "desc", "file_name"],
+  "required": ["category", "desc", "file_name", "create_time"],
   "properties": {
     "_id": { "description": "ID" },
     "type": { "bsonType": "string", "description": "固定教程类型：quick/repair/query/invoice" },
@@ -10,6 +10,7 @@
     "file_url": { "bsonType": "string" },
     "file_type": { "bsonType": "string" },
     "sort": { "bsonType": "int" },
+    "create_time": { "bsonType": "timestamp" },
     "update_time": { "bsonType": "timestamp" }
   }
 }

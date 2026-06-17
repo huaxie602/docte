@@ -39,8 +39,18 @@
       "bsonType": "string",
       "enum": [
         "待处理",
-        "已处理"
+        "处理中",
+        "已回复",
+        "已完成"
       ]
+    },
+    "reply": {
+      "bsonType": "string",
+      "description": "客服回复内容"
+    },
+    "reply_time": {
+      "bsonType": "timestamp",
+      "description": "客服回复时间"
     },
     "handle_remark": {
       "bsonType": "string",

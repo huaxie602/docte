@@ -112,3 +112,7 @@ export const uploadGuideFile = (token, fileContent, fileName, fileType) => {
 export const uploadSurveyPoster = (token, fileContent, fileName, fileType) => {
   return request.post(`${API_BASE.adminSys}/uploadSurveyPoster`, { token, fileContent, fileName, fileType })
 }
+
+export const getGuideFileUrl = (token, fileID) => {
+  return request.post(`${API_BASE.adminSys}/getGuideFileUrl`, { token, fileID })
+}

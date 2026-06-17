@@ -9,6 +9,13 @@
 			}
 		},
 		{
+			"path": "pages/search/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "维修查询"
+			}
+		},
+		{
 			"path": "pages/login/index",
 			"style": {
 				"navigationStyle": "custom",

@@ -407,8 +407,8 @@ const goBack = () => {
 
 const callService = () => {
 	uni.makePhoneCall({
-		phoneNumber: '13929945417',
-		fail: () => uni.showToast({ title: '可联系售后：13929945417', icon: 'none' })
+		phoneNumber: '0757-85775667',
+		fail: () => uni.showToast({ title: '可联系官方热线：0757-85775667', icon: 'none' })
 	})
 }
 </script>

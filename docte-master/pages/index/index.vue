@@ -12,7 +12,9 @@
 			<view v-if="activeModule === 'repair'" class="module-content repair-module">
 				<view class="warm-card">
 					<text class="warm-strong">温馨提示：</text>
-					<text>为了给您提供更快更好的服务，请务必在快递里面留纸条写明：寄回原因或故障描述，联系方式和收件地址。</text>
+					<view class="warm-list">
+						<text v-for="(tip, index) in repairSafetyTips" :key="tip">{{ index + 1 }}、{{ tip }}</text>
+					</view>
 				</view>
 
 				<view class="module-section-head">
@@ -165,30 +167,15 @@
 							<text class="contact-title">服务热线（微信同号）</text>
 							<text class="contact-desc">（8:00至21:00）</text>
 							<view class="contact-phone-list">
-								<view class="phone-item tap" @click="callPhone('13929945417')">
-									<text class="phone-label">售后技术:</text>
-									<text class="phone-number">13929945417</text>
-									<text class="phone-region">（全国）</text>
+								<view class="phone-item tap" @click="callPhone(cicadaContact.officialHotline)">
+									<text class="phone-label">官方热线:</text>
+									<text class="phone-number">{{ cicadaContact.officialHotline }}</text>
+									<text class="phone-region">（官网可核验）</text>
 								</view>
-								<view class="phone-item tap" @click="callPhone('13929924257')">
-									<text class="phone-label">售后客服1:</text>
-									<text class="phone-number">13929924257</text>
-									<text class="phone-region">（华东,湖北,湖南,海南）</text>
-								</view>
-								<view class="phone-item tap" @click="callPhone('13927263445')">
-									<text class="phone-label">售后客服2:</text>
-									<text class="phone-number">13927263445</text>
-									<text class="phone-region">（东北,华北,西北,西南）</text>
-								</view>
-								<view class="phone-item tap" @click="callPhone('13927700164')">
-									<text class="phone-label">售后客服3:</text>
-									<text class="phone-number">13927700164</text>
-									<text class="phone-region">（广东,河南）</text>
-								</view>
-								<view class="phone-item tap" @click="callPhone('+8613929924346')">
-									<text class="phone-label">国际售后技术:</text>
-									<text class="phone-number">+86 13929924346</text>
-									<text class="phone-region">（International after-sales technology）</text>
+								<view class="phone-item tap" @click="callPhone(cicadaContact.afterSalesManager)">
+									<text class="phone-label">售后客服经理:</text>
+									<text class="phone-number">{{ cicadaContact.afterSalesManager }}</text>
+									<text class="phone-region">（客户提供资料确认）</text>
 								</view>
 							</view>
 						</view>
@@ -673,60 +660,10 @@
 						</view>
 					</view>
 				</view>
-				<view v-if="activeDoc.fileUrl" class="guide-file-card">
-					<view>
-						<text>后台上传文档</text>
-						<text>{{ activeDoc.fileName || '操作教程文档' }}</text>
-					</view>
-					<view class="small-primary tap" @click="openGuideFile(activeDoc)">打开文档</view>
-				</view>
 				<view v-if="activeDoc.steps" class="step-card">
 					<view v-for="(step, index) in activeDoc.steps" :key="step.title" class="guide-step-row">
 						<text>{{ index + 1 }}</text>
 						<view><text>{{ step.title }}</text><text>{{ step.desc }}</text></view>
-					</view>
-				</view>
-				<view v-if="activeModule !== 'fees'" class="dual-actions doc-actions">
-					<view class="ghost-button tap" @click="go('contact')">联系客服</view>
-					<view class="primary-button tap" @click="go('repair')">立即报修</view>
-				</view>
-			</view>
-
-			<view v-else-if="activeModule === 'contact'" class="module-content contact-module">
-				<view class="online-card">
-					<view class="online-icon"><view class="glyph glyph-chat"><view class="glyph-extra"></view></view></view>
-					<view class="online-copy">
-						<text>{{ customerService.title || '在线客服' }}</text>
-						<text>{{ customerService.description || '7×24 小时 · 即时响应' }}</text>
-					</view>
-					<view class="soft-button">立即咨询</view>
-				</view>
-				<view class="module-section-head single"><text>服务热线</text></view>
-				<view class="hotline-grid">
-					<view v-for="item in contactHotlines" :key="item.title" class="hotline-card">
-						<view><view class="glyph glyph-phone"><view class="glyph-extra"></view></view><text>{{ item.title }}</text></view>
-						<text>{{ item.number }}</text>
-						<text>{{ item.time }}</text>
-						<view class="small-primary">一键拨号</view>
-					</view>
-				</view>
-				<view class="module-section-head single"><text>收件地址</text></view>
-				<view class="address-card">
-					<view class="glyph glyph-pin"><view class="glyph-extra"></view></view>
-					<view class="address-copy">
-						<text>{{ contactInfo.companyName }}</text>
-						<text v-for="item in receiver" :key="item.label">{{ item.label }} · {{ item.value }}</text>
-					</view>
-				</view>
-				<view class="address-actions">
-					<view class="ghost-button tap" @click="copyAll">复制地址</view>
-					<view class="primary-button tap">查看地图</view>
-				</view>
-				<view class="module-section-head single"><text>工作时间</text></view>
-				<view class="white-list-card">
-					<view v-for="item in workTimes" :key="item.day" class="list-row">
-						<text>{{ item.day }}</text>
-						<text>{{ item.time }}</text>
 					</view>
 				</view>
 			</view>
@@ -931,7 +868,7 @@
 				</view>
 
 				<view class="new-brand-banner" style="margin: 12px; overflow: hidden; border-radius: 8px; position: relative; z-index: 10;"> 
-					<image src="/static/logo-banner.jpg" mode="widthFix" style="width: 100%; display: block;"></image> 
+					<image :src="cicadaAssets.logoBanner" mode="widthFix" style="width: 100%; display: block;"></image>
 				</view>
 
 				<view class="section section-basic">
@@ -1017,7 +954,7 @@
 							</view>
 							<view class="contact-copy">
 								<text class="contact-title">服务热线</text>
-								<text class="contact-desc">13929198537</text>
+								<text class="contact-desc">{{ cicadaContact.officialHotline }}</text>
 							</view>
 						</view>
 					</view>
@@ -1056,21 +993,10 @@
 						<view class="mini-icon mini-check mini-check-white"></view>
 						<text>{{ copied === 'all' ? '已复制' : '一键复制以上收件信息' }}</text>
 					</view>
-					<view class="chat-round tap" @click="go('contact')">
-						<view class="glyph glyph-chat">
-							<view class="glyph-extra"></view>
-						</view>
-					</view>
 				</view>
 			</view>
 
 			<view v-else-if="activeTab === 'company'" class="company-body">
-				<view class="company-brand">
-					<view class="brand-left">
-						<image class="brand-logo" :src="cicadaAssets.logoNew" mode="aspectFit"></image>
-					</view>
-				</view>
-
 				<view class="company-hero">
 					<image class="company-hero-image" :src="cicadaAssets.photoFactory" mode="aspectFill"></image>
 					<view class="company-hero-mask"></view>
@@ -1153,7 +1079,7 @@
 						<image class="qr-image" :src="wechatInfo.qrcodeUrl" mode="aspectFill" show-menu-by-longpress></image>
 					</view>
 					<text class="follow-title">了解产品与售后支持</text>
-					<text class="follow-desc">长按识别二维码关注官方公众号，获取产品资料、维修保养与售后服务支持。</text>
+					<text class="follow-desc">长按识别二维码关注官方服务号，获取产品资料、维修保养与售后服务支持。</text>
 					<official-account class="official-account-btn"></official-account>
 				</view>
 			</view>
@@ -1237,7 +1163,7 @@
 			<view class="vi-side-wordmark">
 				<text class="vi-en">CICADA</text><text class="vi-tm">®</text>
 			</view>
-			<text class="side-text">思科达公众号</text>
+			<text class="side-text">思科达服务号</text>
 		</view>
 
 		<BottomTabbar v-if="showBottomTabbar" :tabs="tabs" :active-id="activeTab" @select="go" />
@@ -1249,7 +1175,7 @@
 					<image class="qr-image" :src="wechatInfo.qrcodeUrl" mode="aspectFill" show-menu-by-longpress="true"></image>
 				</view>
 				<text class="follow-title">了解产品与售后支持</text>
-				<text class="follow-desc">长按识别二维码关注官方公众号，获取产品资料、维修保养与售后服务支持。</text>
+				<text class="follow-desc">长按识别二维码关注官方服务号，获取产品资料、维修保养与售后服务支持。</text>
 				<official-account class="official-account-btn"></official-account>
 			</view>
 		</view>
@@ -1258,7 +1184,7 @@
 			<view class="qr-modal" @click.stop>
 				<text class="modal-close tap" @click="showQr = false">×</text>
 				<image class="qr-logo" :src="cicadaAssets.logoNew" mode="aspectFit"></image>
-				<text class="qr-title">关注官方公众号</text>
+				<text class="qr-title">关注官方服务号</text>
 				<text class="qr-subtitle">获取最新维修指南 / 售后政策</text>
 				<view class="qr-image-wrap">
 					<image
@@ -1325,6 +1251,7 @@ import {
 	updateAddress,
 	deleteAddress,
 	addComplaint,
+	getComplaintList,
 	devLogin,
 	wechatLogin,
 	uploadFeedbackImage,
@@ -1342,6 +1269,7 @@ import {
 import { getInvoiceMeta, getInvoiceStatusKey, invoiceFlow } from './composables/invoiceFlow'
 import {
 	basics,
+	cicadaContact,
 	companyAdvantages,
 	companyIntro,
 	companyProductLines,
@@ -1359,6 +1287,7 @@ import {
 	progressTabs,
 	queries,
 	repairFlow,
+	repairSafetyTips,
 	repairStatusFlow,
 	tabs
 } from './composables/moduleConfig'
@@ -1402,6 +1331,7 @@ const trackSearchKeyword = ref('')
 const activeInvoiceTab = ref('待开票')
 const activeInvoiceOrderId = ref('')
 const trackDetailOrder = ref('')
+const pendingTrackOrderId = ref('')
 const orderDetailOrder = ref('')
 const packageQueryLoading = ref(false)
 const packageQuerySearched = ref(false)
@@ -1497,6 +1427,14 @@ const tabRoutes = {
 	home: true,
 	company: true,
 	mine: true
+}
+
+const parseRouteText = (value = '') => {
+	try {
+		return decodeURIComponent(String(value || '')).trim()
+	} catch (error) {
+		return String(value || '').trim()
+	}
 }
 
 const moduleInfo = computed(() => moduleMap[activeModule.value] || {})
@@ -1628,7 +1566,7 @@ const docFallbacks = {
 		sections: [
 			{ title: '一、报修前准备', lines: ['产品信息：准备好产品型号、序列号等基本信息。', '故障描述：详细描述故障现象、发生时间及使用环境。', '故障照片/视频：如有可能，拍摄故障发生时的照片或视频。', '购买凭证：准备好购买发票或订单信息（用于保修确认）。'] },
 			{ title: '二、网上报修流程', lines: ['进入「立即报修」页面。', '填写产品信息。', '填写故障描述并上传图片。', '确认信息并提交。'] },
-			{ title: '三、思科达 24h 客服指引', lines: ['在线客服：8:00 - 21:00。', '服务热线：400-888-9999。'] }
+			{ title: '三、思科达客服指引', lines: [`在线客服：${cicadaContact.workTime}。`, `官方热线：${cicadaContact.officialHotline}。`, `售后客服经理：${cicadaContact.afterSalesManager}。`] }
 		],
 		steps: [
 			{ title: '进入立即报修', desc: '在小程序首页点击「立即报修」按钮，进入报修表单页面。' },
@@ -1667,11 +1605,11 @@ const docMap = ref({})
 logBoot('doc fallbacks ready')
 
 const contactInfo = ref({
-	companyName: '佛山市思科达医疗器械有限公司',
-	phone: '13929198537',
+	companyName: cicadaContact.companyName,
+	phone: cicadaContact.officialHotline,
 	email: '',
-	address: '广东省佛山市南海区狮山镇罗村广东新光源核心基地B5座五楼',
-	workTime: '周一至周五 08:00 - 21:00'
+	address: cicadaContact.address,
+	workTime: `周一至周五 ${cicadaContact.workTime}`
 })
 
 const customerService = ref({
@@ -1688,8 +1626,8 @@ const wechatInfo = ref({
 })
 
 const contactHotlines = ref([
-	{ title: '售后技术', number: '13929198537', time: '工作日 08:00-21:00' },
-	{ title: '购买咨询', number: '13929198537', time: '工作日 08:00-21:00' }
+	{ title: '官方热线', number: cicadaContact.officialHotline, time: `工作日 ${cicadaContact.workTime}` },
+	{ title: '售后客服经理', number: cicadaContact.afterSalesManager, time: `工作日 ${cicadaContact.workTime}` }
 ])
 
 const workTimes = ref([
@@ -1727,16 +1665,19 @@ const normalizeDoc = (doc, fallback = {}) => {
 		paperTitle: doc.paperTitle || doc.title || fallback.paperTitle || fallback.title,
 		content,
 		updateTime: doc.updateTime || fallback.updateTime,
+		fileName: doc.fileName || doc.file_name || fallback.fileName || '',
+		fileUrl: doc.fileUrl || doc.file_url || fallback.fileUrl || '',
+		fileType: doc.fileType || doc.file_type || fallback.fileType || '',
 		sections: Array.isArray(doc.sections) && doc.sections.length ? doc.sections : fallback.sections || [],
 		steps: Array.isArray(doc.steps) && doc.steps.length ? doc.steps : fallback.steps
 	}
 }
 
 const normalizeContact = (data = {}) => ({
-	companyName: data.companyName || contactInfo.value.companyName,
-	phone: data.phone || contactInfo.value.phone,
+	companyName: data.companyName || cicadaContact.companyName,
+	phone: cicadaContact.officialHotline,
 	email: data.email || contactInfo.value.email,
-	address: data.address || contactInfo.value.address,
+	address: cicadaContact.address,
 	workTime: data.workTime || contactInfo.value.workTime
 })
 
@@ -1778,14 +1719,30 @@ const scanTrackingNo = () => {
 	})
 }
 
-const normalizeQrUrl = (url) => url || cicadaAssets.qrWechat
+const isCloudFileUrl = (url = '') => String(url || '').trim().startsWith('cloud://')
+
+const resolveCloudImageUrl = async (url = '', fallback = '') => {
+	const target = String(url || '').trim() || fallback
+	if (!isCloudFileUrl(target)) return target
+	try {
+		const res = await uniCloud.getTempFileURL({ fileList: [target] })
+		const item = res.fileList && res.fileList[0]
+		return (item && (item.tempFileURL || item.url)) || fallback || target
+	} catch (error) {
+		console.warn('resolve cloud image failed:', error)
+		return fallback || target
+	}
+}
+
+const normalizeQrUrl = (url) => String(url || '').trim() || cicadaAssets.qrWechat
 const normalizeSurveyPosterUrl = (url) => String(url || '').trim() || cicadaAssets.surveyPoster
 
 const applyContact = (data = {}) => {
 	const next = normalizeContact(data)
 	contactInfo.value = next
 	contactHotlines.value = [
-		{ title: '售后技术', number: next.phone, time: next.workTime },
+		{ title: '官方热线', number: cicadaContact.officialHotline, time: next.workTime },
+		{ title: '售后客服经理', number: cicadaContact.afterSalesManager, time: next.workTime },
 		...(next.email ? [{ title: '邮箱咨询', number: next.email, time: next.workTime }] : [])
 	]
 	workTimes.value = splitWorkTimes(next.workTime)
@@ -2108,6 +2065,13 @@ const applyFaultTypes = (list = []) => {
 }
 
 const updateDoc = (key, doc) => {
+	if (key && key.startsWith('guide-')) {
+		console.log('[guide-doc]', key, {
+			fileName: doc && (doc.fileName || doc.file_name),
+			fileUrl: doc && (doc.fileUrl || doc.file_url),
+			fileType: doc && (doc.fileType || doc.file_type)
+		})
+	}
 	docMap.value = {
 		...docMap.value,
 		[key]: normalizeDoc(doc, docFallbacks[key] || docMap.value[key] || {})
@@ -2285,6 +2249,45 @@ const openGuideFile = async (doc = {}) => {
 		console.warn('open guide file failed:', error)
 		uni.hideLoading()
 		uni.showToast({ title: '文档打开失败，请稍后重试', icon: 'none' })
+	}
+}
+
+const guideModuleTypeMap = {
+	'guide-quick': 'quick',
+	'guide-repair': 'repair',
+	'guide-query': 'query',
+	'guide-invoice': 'invoice'
+}
+
+const openGuideEntry = async (id) => {
+	const fallback = docFallbacks[id] || {}
+	const cachedDoc = docMap.value[id]
+	if (cachedDoc && cachedDoc.fileUrl) {
+		await openGuideFile(cachedDoc)
+		return
+	}
+
+	const type = guideModuleTypeMap[id]
+	if (!type) {
+		openModule(id)
+		return
+	}
+
+	try {
+		uni.showLoading({ title: '打开中' })
+		const doc = await getGuide(type)
+		uni.hideLoading()
+		updateDoc(id, doc)
+		const normalizedDoc = normalizeDoc(doc, fallback)
+		if (normalizedDoc.fileUrl) {
+			await openGuideFile(normalizedDoc)
+			return
+		}
+		openModule(id)
+	} catch (error) {
+		console.warn('open guide entry fallback:', error)
+		uni.hideLoading()
+		openModule(id)
 	}
 }
 
@@ -2771,12 +2774,35 @@ const saveFeedbackRecords = () => {
 	writeStorage(feedbackRecordKey, feedbackRecords.value)
 }
 
+const loadFeedbackRecords = async () => {
+	const token = uni.getStorageSync('token')
+	if (!token) return
+	try {
+		const result = await getComplaintList({ page: 1, size: 20 })
+		if (result && result.list) {
+			const records = result.list.map(item => ({
+				...item,
+				time: formatDateTime(item.createTime || item.create_time) || todayText(),
+				reply: item.reply || ''
+			}))
+			feedbackRecords.value = records
+			saveFeedbackRecords()
+		}
+	} catch (error) {
+		console.warn('load feedback records failed:', error)
+	}
+}
+
 const getFeedbackMeta = (record = {}) => {
 	const metaMap = {
 		submitted: { label: '已提交', tone: 'info' },
 		processing: { label: '处理中', tone: 'warn' },
 		replied: { label: '已回复', tone: 'ok' },
-		closed: { label: '已完成', tone: 'ok' }
+		closed: { label: '已完成', tone: 'ok' },
+		'待处理': { label: '待处理', tone: 'info' },
+		'处理中': { label: '处理中', tone: 'warn' },
+		'已回复': { label: '已回复', tone: 'ok' },
+		'已完成': { label: '已完成', tone: 'ok' }
 	}
 	return metaMap[record.status] || metaMap.submitted
 }
@@ -2824,11 +2850,12 @@ const previewFeedbackRecordImage = (record = {}, index = 0) => {
 	})
 }
 
-const previewSurveyPoster = () => {
+const previewSurveyPoster = async () => {
 	const currentPosterUrl = normalizeSurveyPosterUrl(surveyPosterUrl.value)
+	const previewUrl = await resolveCloudImageUrl(currentPosterUrl, cicadaAssets.surveyPoster)
 	uni.previewImage({
-		current: currentPosterUrl,
-		urls: [currentPosterUrl]
+		current: previewUrl,
+		urls: [previewUrl]
 	})
 }
 
@@ -2857,6 +2884,10 @@ const openModule = (id, type) => {
 		}
 	}
 
+	if (id === 'feedback') {
+		loadFeedbackRecords()
+	}
+
 }
 
 const closeModule = () => {
@@ -2873,6 +2904,50 @@ const openTrackDetail = (order) => {
 	requestStatusSubscription('track_view')
 	trackDetailOrder.value = order.id
 	openModule('order-detail')
+}
+
+const matchRouteOrder = (order = {}, target = '') => {
+	const normalizedTarget = String(target || '').trim().toLowerCase()
+	if (!normalizedTarget) return false
+	return [
+		order.id,
+		order.recordId,
+		order.orderId,
+		order.orderNo,
+		order.order_no,
+		order._id
+	].some((value) => String(value || '').trim().toLowerCase() === normalizedTarget)
+}
+
+const openTrackDetailById = (orderId, showMissToast = false) => {
+	const target = parseRouteText(orderId)
+	if (!target) return false
+	const order = trackOrders.value.find((item) => matchRouteOrder(item, target))
+	if (order) {
+		activeTrackTab.value = '全部'
+		trackSearchKeyword.value = ''
+		openTrackDetail(order)
+		return true
+	}
+
+	if (showMissToast) {
+		activeTrackTab.value = '全部'
+		trackSearchKeyword.value = target
+		openModule('track')
+		uni.showToast({ title: '未找到对应工单', icon: 'none' })
+	}
+	return false
+}
+
+const flushPendingTrackOrder = (showMissToast = false) => {
+	if (!pendingTrackOrderId.value) return
+	if (openTrackDetailById(pendingTrackOrderId.value, showMissToast)) {
+		pendingTrackOrderId.value = ''
+		return
+	}
+	if (showMissToast) {
+		pendingTrackOrderId.value = ''
+	}
 }
 
 const openOrderDetail = (order) => {
@@ -2964,7 +3039,7 @@ const removeRepairProduct = (index) => {
 	repairProducts.value.splice(index, 1)
 }
 
-const isCloudFileId = (url = '') => String(url || '').startsWith('cloud://')
+const isCloudFileId = isCloudFileUrl
 const normalizeUploadUrl = (res = {}, fallbackPath = '') => {
 	const url = res.url || res.fileUrl || res.path || res.fullUrl || ''
 	return isCloudFileId(url) ? fallbackPath : (url || fallbackPath)
@@ -3529,6 +3604,7 @@ const submitFeedback = async () => {
 
 	feedbackSubmitting.value = true
 	try {
+		console.log('submitFeedback: calling addComplaint...')
 		const result = await addComplaint({
 			type: feedbackType.value === '投诉' ? 0 : 1,
 			content: feedbackText.value.trim(),
@@ -3537,6 +3613,7 @@ const submitFeedback = async () => {
 			contact: feedbackContactValue.value.trim(),
 			orderId: feedbackOrderId.value.trim()
 		})
+		console.log('submitFeedback: addComplaint success', result)
 		const record = addLocalFeedbackRecord('submitted', result || {})
 		uni.showModal({
 			title: '提交成功',
@@ -3546,11 +3623,18 @@ const submitFeedback = async () => {
 		})
 		resetFeedbackForm()
 	} catch (error) {
-		console.warn('submit feedback fallback:', error)
+		console.error('submitFeedback: addComplaint failed', error)
+		const errorMsg = error.message || error.errMsg || '网络错误'
 		const record = addLocalFeedbackRecord('submitted')
+		let content = `反馈单号：${record.ticketNo}。`
+		if (errorMsg.includes('cloud') || errorMsg.includes('云') || errorMsg.includes('server')) {
+			content += '当前云服务暂未配置，请在微信开发者工具中配置云服务空间并上传云函数后重试。前端已先保留记录，后台配置完成后可同步客服回复与处理状态。'
+		} else {
+			content += '当前投诉建议接口调用失败，前端已先保留记录；后台上线后可同步客服回复与处理状态。'
+		}
 		uni.showModal({
 			title: '已生成反馈单',
-			content: `反馈单号：${record.ticketNo}。当前投诉建议接口未开放，前端已先保留记录；后台上线后可同步客服回复与处理状态。`,
+			content,
 			showCancel: false,
 			confirmText: '知道了'
 		})
@@ -3623,11 +3707,16 @@ const logoutLocal = () => {
 	logged.value = false
 }
 
-const go = (id, type) => {
+const go = async (id, type) => {
 	if (tabRoutes[id]) {
 		activeTab.value = id
 		activeModule.value = ''
 		previousModule.value = ''
+		return
+	}
+
+	if (guideModuleTypeMap[id]) {
+		await openGuideEntry(id)
 		return
 	}
 
@@ -3658,7 +3747,7 @@ const openCustomerService = () => {
 
 const makePhoneCall = () => {
 	uni.makePhoneCall({
-		phoneNumber: '13929198537',
+		phoneNumber: cicadaContact.officialHotline,
 		success: () => {},
 		fail: (error) => {
 			console.warn('make phone call failed:', error)
@@ -3679,23 +3768,24 @@ const callPhone = (phoneNumber) => {
 }
 
 const handleSearch = () => {
-	// 待后端接口建立后恢复
-	// go('guide-query')
-	
-	// 临时拦截：搜索功能正在优化中
-	uni.showModal({
-		title: '提示',
-		content: '搜索功能正在优化中，敬请期待！',
-		showCancel: false,
-		confirmText: '知道了'
+	const input = searchKeyword.value.trim()
+	const query = input ? `?keyword=${encodeURIComponent(input)}` : ''
+	uni.navigateTo({
+		url: `/pages/search/index${query}`,
+		fail: () => uni.showToast({ title: '查询页暂不可用', icon: 'none' })
 	})
 }
 
 onLoad((options = {}) => {
 	const type = Number(options.type)
 	const routeType = Number.isInteger(type) ? type : undefined
+	const routeOrderId = parseRouteText(options.orderId)
 
 	if (options.module && moduleMap[options.module]) {
+		if (options.module === 'track' && routeOrderId) {
+			pendingTrackOrderId.value = routeOrderId
+			trackSearchKeyword.value = routeOrderId
+		}
 		openModule(options.module, routeType)
 		return
 	}
@@ -3743,29 +3833,32 @@ const loadRemoteContent = async () => {
 			.then((doc) => updateDoc('guide-invoice', doc))
 			.catch((error) => console.warn('invoice guide fallback:', error)),
 		getSurveyPoster()
-			.then((data = {}) => {
-				surveyPosterUrl.value = normalizeSurveyPosterUrl(data.posterUrl || data.url)
+			.then(async (data = {}) => {
+				const posterUrl = normalizeSurveyPosterUrl(data.posterUrl || data.url)
+				surveyPosterUrl.value = await resolveCloudImageUrl(posterUrl, cicadaAssets.surveyPoster)
 			})
 			.catch((error) => console.warn('survey poster fallback:', error)),
 		getContact()
 			.then((data) => applyContact(data))
 			.catch((error) => console.warn('contact fallback:', error)),
 		getCustomerService()
-			.then((data = {}) => {
+			.then(async (data = {}) => {
+				const qrcodeUrl = normalizeQrUrl(data.qrcodeUrl)
 				customerService.value = {
 					...customerService.value,
 					...data,
-					qrcodeUrl: normalizeQrUrl(data.qrcodeUrl),
+					qrcodeUrl: await resolveCloudImageUrl(qrcodeUrl, cicadaAssets.qrWechat),
 					wechat: data.wechat || data.wechatId || customerService.value.wechat
 				}
 			})
 			.catch((error) => console.warn('customer service fallback:', error)),
 		getWechat()
-			.then((data = {}) => {
+			.then(async (data = {}) => {
+				const qrcodeUrl = normalizeQrUrl(data.qrcodeUrl)
 				wechatInfo.value = {
 					...wechatInfo.value,
 					...data,
-					qrcodeUrl: normalizeQrUrl(data.qrcodeUrl)
+					qrcodeUrl: await resolveCloudImageUrl(qrcodeUrl, cicadaAssets.qrWechat)
 				}
 			})
 			.catch((error) => console.warn('wechat fallback:', error)),
@@ -3792,6 +3885,7 @@ const loadRemoteContent = async () => {
 	]
 
 	await Promise.allSettled(tasks)
+	flushPendingTrackOrder(true)
 }
 
 onMounted(() => {
@@ -4908,31 +5002,11 @@ onMounted(() => {
 	box-sizing: border-box;
 }
 
-.chat-round {
-	width: 100rpx;
-	height: 100rpx;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-	border-radius: 999rpx;
-	background: #FFFFFF;
-	color: #1E6FE0;
-	box-shadow: 0 12rpx 28rpx -8rpx rgba(15, 31, 58, 0.18);
-}
-
 .company-body {
 	min-height: 100vh;
-	padding: 56rpx 28rpx 220rpx;
+	padding: 176rpx 28rpx 220rpx;
 	background: #E8EEFA;
 	box-sizing: border-box;
-}
-
-.company-brand {
-	margin-bottom: 28rpx;
-	display: flex;
-	align-items: center;
-	justify-content: flex-start;
 }
 
 .company-hero {
@@ -6400,8 +6474,20 @@ onMounted(() => {
 }
 
 .warm-strong {
+	display: block;
+	margin-bottom: 8rpx;
 	font-weight: 700;
 	color: #E5484D;
+}
+
+.warm-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6rpx;
+}
+
+.warm-list text {
+	display: block;
 }
 
 .repair-module {
