@@ -1,9 +1,14 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
 
-const WX_APPID = process.env.WX_APPID
-const WX_SECRET = process.env.WX_SECRET
 const TOKEN_EXPIRE = 7 * 24 * 3600 * 1000 // 7天
+let privateWechatConfig = {}
+
+try {
+  privateWechatConfig = require('./wechat.private.config')
+} catch (e) {
+  privateWechatConfig = {}
+}
 
 const RATE_LIMITS = {
   login: { windowMs: 60 * 1000, max: 30 },
@@ -14,13 +19,31 @@ function genToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
+function getWechatConfigValue(...keys) {
+  for (const key of keys) {
+    const envValue = process.env[key]
+    if (envValue) return String(envValue).trim()
+  }
+  return ''
+}
+
+function getWechatAppConfig() {
+  const appId = getWechatConfigValue('WX_APPID', 'WECHAT_APPID') || privateWechatConfig.appId
+  const secret = getWechatConfigValue('WX_SECRET', 'WECHAT_SECRET') || privateWechatConfig.appSecret
+  return {
+    appId: String(appId || '').trim(),
+    secret: String(secret || '').trim()
+  }
+}
+
 async function getAccessToken() {
-  if (!WX_APPID || !WX_SECRET) {
+  const { appId, secret } = getWechatAppConfig()
+  if (!appId || !secret) {
     throw new Error('请先配置微信小程序 WX_APPID 和 WX_SECRET')
   }
 
   const res = await uniCloud.httpclient.request(
-    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${WX_APPID}&secret=${WX_SECRET}`,
+    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(secret)}`,
     { dataType: 'json' }
   )
   return res.data.access_token
@@ -168,14 +191,15 @@ module.exports = {
 
   async login({ code, phoneCode }) {
     try {
-      if (!WX_APPID || !WX_SECRET) {
+      const { appId, secret } = getWechatAppConfig()
+      if (!appId || !secret) {
         return { code: -1, message: '请先配置微信小程序 WX_APPID 和 WX_SECRET' }
       }
       await checkRateLimit('login', `${getClientIdentity(this)}:${code || 'empty'}`)
 
       // 1. 换取 openid
       const wxRes = await uniCloud.httpclient.request(
-        `https://api.weixin.qq.com/sns/jscode2session?appid=${WX_APPID}&secret=${WX_SECRET}&js_code=${code}&grant_type=authorization_code`,
+        `https://api.weixin.qq.com/sns/jscode2session?appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(secret)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`,
         { dataType: 'json' }
       )
       const { openid, errmsg } = wxRes.data
@@ -194,7 +218,8 @@ module.exports = {
             params: { access_token: await getAccessToken() }
           }
         )
-        phone = phoneRes.data?.phone_info?.phoneNumber || ''
+        const phoneInfo = phoneRes.data && phoneRes.data.phone_info
+        phone = (phoneInfo && phoneInfo.phoneNumber) || ''
       }
 
       const col = db.collection('cicada_users')
@@ -246,12 +271,13 @@ module.exports = {
       if (!code) return { code: -1, message: '缺少 code' }
       await checkRateLimit('login', `${getClientIdentity(this)}:${code}`)
 
-      if (!WX_APPID || !WX_SECRET) {
+      const { appId, secret } = getWechatAppConfig()
+      if (!appId || !secret) {
         return { code: -1, message: '服务端未配置微信环境变量，请在 uniCloud 控制台设置 WX_APPID 和 WX_SECRET' }
       }
 
       const wxRes = await uniCloud.httpclient.request(
-        `https://api.weixin.qq.com/sns/jscode2session?appid=${WX_APPID}&secret=${WX_SECRET}&js_code=${code}&grant_type=authorization_code`,
+        `https://api.weixin.qq.com/sns/jscode2session?appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(secret)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`,
         { dataType: 'json' }
       )
       const { openid, errmsg } = wxRes.data

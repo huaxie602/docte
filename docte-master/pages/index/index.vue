@@ -1304,6 +1304,7 @@ import { computed, onMounted, ref } from 'vue'
 import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app'
 import BottomTabbar from '@/components/BottomTabbar.vue'
 import { cicadaAssets } from '@/config/cicada-assets'
+import { getCloudTempFileURL } from '@/utils/cloud.js'
 import {
 	getContact,
 	getCustomerService,
@@ -1404,6 +1405,7 @@ const repairSubmitting = ref(false)
 const invoiceSubmitting = ref(false)
 const paymentSubmitting = ref(false)
 const paymentProofUploading = ref(false)
+const loginSubmitting = ref(false)
 const subscriptionTemplates = ref(null)
 const feedbackSubmitting = ref(false)
 const feedbackImageUploading = ref(false)
@@ -1901,9 +1903,16 @@ const normalizeOrder = (item = {}) => {
 		trackingNo && `寄出 ${logisticsCompany ? `${logisticsCompany} ` : ''}${trackingNo}`
 	].filter(Boolean)
 	const quoteItems = normalizeQuoteItems({ ...merged, status: statusText, statusGroup: meta.statusGroup })
-	const partsFee = Number(merged.partsFee ?? merged.parts_fee ?? merged.materialFee ?? merged.material_fee ?? merged.quote?.partsFee ?? merged.quote?.parts_fee ?? sumQuoteFee(quoteItems, 'partsFee')) || 0
-	const laborFee = Number(merged.laborFee ?? merged.labor_fee ?? merged.workFee ?? merged.work_fee ?? merged.quote?.laborFee ?? merged.quote?.labor_fee ?? sumQuoteFee(quoteItems, 'laborFee')) || 0
-	const totalFee = Number(merged.totalFee ?? merged.total_fee ?? merged.total_price ?? merged.amount ?? merged.price ?? merged.quote?.totalFee ?? merged.quote?.total_price ?? partsFee + laborFee) || 0
+	const quote = merged.quote || {}
+	const pickFee = (...values) => {
+		for (const value of values) {
+			if (value !== undefined && value !== null) return value
+		}
+		return undefined
+	}
+	const partsFee = Number(pickFee(merged.partsFee, merged.parts_fee, merged.materialFee, merged.material_fee, quote.partsFee, quote.parts_fee, sumQuoteFee(quoteItems, 'partsFee'))) || 0
+	const laborFee = Number(pickFee(merged.laborFee, merged.labor_fee, merged.workFee, merged.work_fee, quote.laborFee, quote.labor_fee, sumQuoteFee(quoteItems, 'laborFee'))) || 0
+	const totalFee = Number(pickFee(merged.totalFee, merged.total_fee, merged.total_price, merged.amount, merged.price, quote.totalFee, quote.total_price, partsFee + laborFee)) || 0
 	const paymentProofs = Array.isArray(merged.paymentProofs)
 		? merged.paymentProofs
 		: (Array.isArray(merged.payment_proofs) ? merged.payment_proofs : [])
@@ -1943,7 +1952,7 @@ const normalizeOrder = (item = {}) => {
 		invoiceNo: merged.invoiceNo || merged.invoice_no || invoiceInfo.invoice_no,
 		invoiceDate: merged.invoiceDate || merged.invoice_date || formatDateTime(invoiceInfo.update_time || invoiceInfo.apply_time, 0, 10),
 		invoiceUrl: merged.invoiceUrl || merged.invoice_url || invoiceInfo.invoice_url,
-		quoteStatus: merged.quoteStatus || merged.quote_status || merged.quote?.status || (quoteItems.length ? 'issued' : 'pending'),
+		quoteStatus: merged.quoteStatus || merged.quote_status || quote.status || (quoteItems.length ? 'issued' : 'pending'),
 		authorizationStatus: merged.authorizationStatus || merged.authorization_status || merged.authStatus || (localPatch.authorizationStatus || ''),
 		authorizationTime: merged.authorizationTime || merged.authorization_time || localPatch.authorizationTime || '',
 		paymentStatus: merged.paymentStatus || merged.payment_status || (paymentProofs.length ? 'uploaded' : 'pending'),
@@ -2244,7 +2253,7 @@ const getGuideFileExt = (doc = {}) => {
 const resolveGuideFileUrl = async (fileUrl = '') => {
 	const url = String(fileUrl || '').trim()
 	if (!url || /^https?:\/\//i.test(url) || url.startsWith('wxfile://')) return url
-	const res = await uniCloud.getTempFileURL({ fileList: [url] })
+	const res = await getCloudTempFileURL([url])
 	const item = res.fileList && res.fileList[0]
 	return (item && (item.tempFileURL || item.url)) || url
 }
@@ -3562,6 +3571,7 @@ const submitFeedback = async () => {
 }
 
 const onGetPhoneNumberLogin = async (event = {}) => {
+	if (loginSubmitting.value) return
 	const detail = event.detail || {}
 
 	if (detail.errMsg !== 'getPhoneNumber:ok') {
@@ -3575,18 +3585,17 @@ const onGetPhoneNumberLogin = async (event = {}) => {
 		return
 	}
 
+	loginSubmitting.value = true
 	try {
-		const loginRes = await uni.login({ provider: 'weixin' })
-		if (!loginRes.code) {
-			throw new Error('获取微信登录凭证失败')
-		}
-		const res = await wechatLogin({ code: loginRes.code, phoneCode: detail.code })
+		const res = await wechatLogin({ phoneCode: detail.code })
 		if (applyLoginSession(res)) {
 			uni.showToast({ title: '登录成功', icon: 'success' })
 		}
 	} catch (error) {
 		console.warn('wechat phone login failed:', error)
 		uni.showToast({ title: error.message || '登录接口暂未开放', icon: 'none' })
+	} finally {
+		loginSubmitting.value = false
 	}
 }
 

@@ -11,9 +11,16 @@ export const formatDateTime = (value = '', sliceStart = 0, sliceEnd = 16) => {
 
 export const formatMoney = (value, pendingLabel = '待确认') => {
 	if (value === undefined || value === null || value === '') return pendingLabel
-	const numberValue = Number(String(value ?? '').replace(/[^\d.-]/g, ''))
+	const numberValue = Number(String(value === undefined || value === null ? '' : value).replace(/[^\d.-]/g, ''))
 	if (!Number.isFinite(numberValue)) return pendingLabel
 	return `¥${numberValue.toFixed(2)}`
+}
+
+const firstDefined = (...values) => {
+	for (const value of values) {
+		if (value !== undefined && value !== null) return value
+	}
+	return undefined
 }
 
 export const formatOrderListPrice = (order = {}, emptyLabel = '—') => {
@@ -43,13 +50,15 @@ export const toTextLines = (value) => {
 }
 
 export const normalizeQuoteItems = (item = {}, defaultName = '维修项目') => {
-	const rawItems = item.quoteItems || item.quote_items || item.repairItems || item.repair_items || item.quote?.items || item.quotation?.items
+	const quote = item.quote || {}
+	const quotation = item.quotation || {}
+	const rawItems = item.quoteItems || item.quote_items || item.repairItems || item.repair_items || quote.items || quotation.items
 	const list = Array.isArray(rawItems) && rawItems.length ? rawItems : []
 	return list.map((row = {}) => ({
 		name: row.name || row.title || row.projectName || defaultName,
 		desc: row.desc || row.description || row.remark || '',
-		partsFee: Number(row.partsFee ?? row.parts_fee ?? row.partFee ?? row.part_fee ?? row.materialFee ?? row.material_fee ?? row.partsAmount ?? row.parts_amount ?? 0) || 0,
-		laborFee: Number(row.laborFee ?? row.labor_fee ?? row.workFee ?? row.work_fee ?? row.serviceFee ?? row.service_fee ?? row.laborAmount ?? row.labor_amount ?? 0) || 0
+		partsFee: Number(firstDefined(row.partsFee, row.parts_fee, row.partFee, row.part_fee, row.materialFee, row.material_fee, row.partsAmount, row.parts_amount, 0)) || 0,
+		laborFee: Number(firstDefined(row.laborFee, row.labor_fee, row.workFee, row.work_fee, row.serviceFee, row.service_fee, row.laborAmount, row.labor_amount, 0)) || 0
 	}))
 }
 

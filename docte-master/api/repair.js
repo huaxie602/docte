@@ -1,8 +1,10 @@
+import { importCloudObject, uploadCloudFile } from '@/utils/cloud.js'
+
 let orderCloudObject = null
 
 const getCloudObject = () => {
   if (!orderCloudObject) {
-    orderCloudObject = uniCloud.importObject('cicada-client-order')
+    orderCloudObject = importCloudObject('cicada-client-order')
   }
   return orderCloudObject
 }
@@ -120,7 +122,7 @@ export const getRepairStats = () => {
 
 export const uploadRepairImage = (filePath) => {
   return new Promise((resolve, reject) => {
-    uniCloud.uploadFile({
+    uploadCloudFile({
       filePath,
       cloudPath: `repair/${Date.now()}.jpg`,
       success: (res) => {

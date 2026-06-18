@@ -1,19 +1,22 @@
+import { loginWithWechatPhone } from './auth.js'
+import { importCloudObject, uploadCloudFile } from '@/utils/cloud.js'
+
 let publicCloudObject = null
 let userCloudObject = null
 let orderCloudObject = null
 
 const getPublicCloudObject = () => {
-	if (!publicCloudObject) publicCloudObject = uniCloud.importObject('cicada-client-public')
+	if (!publicCloudObject) publicCloudObject = importCloudObject('cicada-client-public')
 	return publicCloudObject
 }
 
 const getUserCloudObject = () => {
-	if (!userCloudObject) userCloudObject = uniCloud.importObject('cicada-client-user')
+	if (!userCloudObject) userCloudObject = importCloudObject('cicada-client-user')
 	return userCloudObject
 }
 
 const getOrderCloudObject = () => {
-	if (!orderCloudObject) orderCloudObject = uniCloud.importObject('cicada-client-order')
+	if (!orderCloudObject) orderCloudObject = importCloudObject('cicada-client-order')
 	return orderCloudObject
 }
 
@@ -40,7 +43,7 @@ const getFileExt = (filePath = '', fallback = 'jpg') => {
 
 const uploadToCloud = (filePath, dir = 'uploads', fallbackExt = 'jpg') => new Promise((resolve, reject) => {
 	const ext = getFileExt(filePath, fallbackExt)
-	uniCloud.uploadFile({
+	uploadCloudFile({
 		filePath,
 		cloudPath: `${dir}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`,
 		success: (res) => resolve({ url: res.fileID, fileID: res.fileID }),
@@ -85,11 +88,7 @@ const getLocalDevLoginSession = () => ({
 })
 
 export const wechatLogin = (data = {}) => {
-	const cloudObject = getUserCloudObject()
-	if (!cloudObject || typeof cloudObject.login !== 'function') {
-		throw new Error('云服务未连接，请先在 HBuilderX 关联并部署 uniCloud')
-	}
-	return cloudObject.login(data).then(unwrapCloudResult)
+	return loginWithWechatPhone(data)
 }
 
 export const devLogin = async () => {

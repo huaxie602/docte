@@ -9,6 +9,13 @@ const SUBSCRIPTION_SCENE_LABELS = {
   payment_confirmed: '付款已确认'
 }
 let wechatAccessTokenCache = { token: '', expireAt: 0 }
+let privateWechatConfig = {}
+
+try {
+  privateWechatConfig = require('../cicada-client-user/wechat.private.config')
+} catch (e) {
+  privateWechatConfig = {}
+}
 
 function getEnvValue(...names) {
   for (const name of names) {
@@ -18,14 +25,21 @@ function getEnvValue(...names) {
   return ''
 }
 
+function firstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value
+  }
+  return undefined
+}
+
 function getSubscriptionTemplateId(scene = '') {
   const key = String(scene || '').trim().toUpperCase()
   return getEnvValue(`WX_SUBSCRIBE_TEMPLATE_${key}`, `WECHAT_SUBSCRIBE_TEMPLATE_${key}`)
 }
 
 function getWechatAppConfig() {
-  const appId = getEnvValue('WX_APPID', 'WECHAT_APPID')
-  const secret = getEnvValue('WX_SECRET', 'WECHAT_SECRET')
+  const appId = getEnvValue('WX_APPID', 'WECHAT_APPID') || privateWechatConfig.appId
+  const secret = getEnvValue('WX_SECRET', 'WECHAT_SECRET') || privateWechatConfig.appSecret
   if (!appId || !secret) throw new Error('未配置 WX_APPID/WX_SECRET')
   return { appId, secret }
 }
@@ -245,8 +259,8 @@ function normalizeQuoteItems(items = []) {
   return items.map((item = {}) => ({
     name: item.name || item.title || item.projectName || '维修费用',
     desc: item.desc || item.description || item.remark || '',
-    partsFee: Number(item.partsFee ?? item.parts_fee ?? item.partFee ?? item.part_fee ?? item.materialFee ?? item.material_fee ?? 0) || 0,
-    laborFee: Number(item.laborFee ?? item.labor_fee ?? item.workFee ?? item.work_fee ?? item.serviceFee ?? item.service_fee ?? 0) || 0
+    partsFee: Number(firstDefined(item.partsFee, item.parts_fee, item.partFee, item.part_fee, item.materialFee, item.material_fee, 0)) || 0,
+    laborFee: Number(firstDefined(item.laborFee, item.labor_fee, item.workFee, item.work_fee, item.serviceFee, item.service_fee, 0)) || 0
   })).filter(item => item.name || item.desc || item.partsFee > 0 || item.laborFee > 0)
 }
 
@@ -269,9 +283,9 @@ function exposeQuoteFields(order = {}) {
   }
 
   const quoteItems = normalizeQuoteItems(order.quote_items || order.quoteItems)
-  const partsFee = Number(order.parts_fee ?? order.partsFee ?? quoteItems.reduce((sum, item) => sum + item.partsFee, 0)) || 0
-  const laborFee = Number(order.labor_fee ?? order.laborFee ?? quoteItems.reduce((sum, item) => sum + item.laborFee, 0)) || 0
-  const totalFee = Number(order.total_price ?? order.totalPrice ?? partsFee + laborFee) || 0
+  const partsFee = Number(firstDefined(order.parts_fee, order.partsFee, quoteItems.reduce((sum, item) => sum + item.partsFee, 0))) || 0
+  const laborFee = Number(firstDefined(order.labor_fee, order.laborFee, quoteItems.reduce((sum, item) => sum + item.laborFee, 0))) || 0
+  const totalFee = Number(firstDefined(order.total_price, order.totalPrice, partsFee + laborFee)) || 0
 
   return {
     quoteItems,

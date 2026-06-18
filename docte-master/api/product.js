@@ -1,13 +1,15 @@
+import { importCloudObject } from '@/utils/cloud.js'
+
 let userCloudObject = null
 let publicCloudObject = null
 
 const getUserCloudObject = () => {
-	if (!userCloudObject) userCloudObject = uniCloud.importObject('cicada-client-user')
+	if (!userCloudObject) userCloudObject = importCloudObject('cicada-client-user')
 	return userCloudObject
 }
 
 const getPublicCloudObject = () => {
-	if (!publicCloudObject) publicCloudObject = uniCloud.importObject('cicada-client-public')
+	if (!publicCloudObject) publicCloudObject = importCloudObject('cicada-client-public')
 	return publicCloudObject
 }
 

@@ -35,6 +35,13 @@ function normalizePage(page, pageSize) {
   return { page: current, pageSize: size }
 }
 
+function firstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value
+  }
+  return undefined
+}
+
 const ADMIN_ORDER_LIST_BATCH_SIZE = 200
 const ADMIN_ORDER_FILTER_SCAN_LIMIT = Number(process.env.ADMIN_ORDER_FILTER_SCAN_LIMIT || 2000)
 
@@ -527,8 +534,8 @@ function normalizeQuoteItems(items) {
   return items.map((item = {}) => {
     const name = normalizeText(item.name || item.title || item.projectName)
     const desc = normalizeText(item.desc || item.description || item.remark)
-    const partsFee = Math.max(Number(item.partsFee ?? item.parts_fee ?? item.partFee ?? item.part_fee ?? item.materialFee ?? item.material_fee ?? 0) || 0, 0)
-    const laborFee = Math.max(Number(item.laborFee ?? item.labor_fee ?? item.workFee ?? item.work_fee ?? item.serviceFee ?? item.service_fee ?? 0) || 0, 0)
+    const partsFee = Math.max(Number(firstDefined(item.partsFee, item.parts_fee, item.partFee, item.part_fee, item.materialFee, item.material_fee, 0)) || 0, 0)
+    const laborFee = Math.max(Number(firstDefined(item.laborFee, item.labor_fee, item.workFee, item.work_fee, item.serviceFee, item.service_fee, 0)) || 0, 0)
     return {
       name: name || '维修费用',
       desc,

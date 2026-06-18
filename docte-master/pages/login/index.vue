@@ -57,18 +57,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { cicadaAssets } from '@/config/cicada-assets'
-import { importCloudObject } from '@/utils/cloud.js'
+import { loginWithWechatPhone } from '@/api/auth.js'
 
 const agreed = ref(false)
 const loading = ref(false)
-
-let userCloudObject = null
-
-onMounted(() => {
-	userCloudObject = importCloudObject('cicada-client-user')
-})
 
 // 微信手机号一键登录
 const onGetPhoneNumber = async (e) => {
@@ -95,26 +89,23 @@ const onGetPhoneNumber = async (e) => {
 	loading.value = true
 
 	try {
-		const result = await userCloudObject.loginWithWechat({ code: e.detail.code })
+		const result = await loginWithWechatPhone({
+			phoneCode: e.detail.code
+		})
 
-		loading.value = false
+		uni.setStorageSync('token', result.token)
+		uni.setStorageSync('userInfo', result.userInfo || {})
+		uni.setStorageSync('isLoggedIn', true)
 
-		if (result.code === 0) {
-			uni.setStorageSync('token', result.data.token)
-			uni.setStorageSync('userInfo', result.data.userInfo)
-			uni.setStorageSync('isLoggedIn', true)
+		uni.showToast({ title: '登录成功', icon: 'success' })
 
-			uni.showToast({ title: '登录成功', icon: 'success' })
-
-			setTimeout(() => {
-				uni.navigateBack()
-			}, 1500)
-		} else {
-			uni.showToast({ title: result.message || '登录失败', icon: 'none' })
-		}
+		setTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
 	} catch (error) {
-		loading.value = false
 		uni.showToast({ title: error.message || '登录失败', icon: 'none' })
+	} finally {
+		loading.value = false
 	}
 }
 

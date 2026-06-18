@@ -6,6 +6,8 @@ unpackage/
 .env
 .env.local
 .env.*.local
+uniCloud-alipay/cloudfunctions/**/.env
+uniCloud-alipay/cloudfunctions/**/wechat.private.config.js
 !.env.example
 project.private.config.json
 preview-info.json
