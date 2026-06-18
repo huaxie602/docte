@@ -117,6 +117,54 @@ async function saveWechatUserByPhone(phone, extra = {}) {
   return { token, userInfo: buildUserInfo({ ...user, ...update }, user._id) }
 }
 
+// 小程序登录时自动建立/补全客户档案（cicada_customers）。
+// 防御式：任何异常都不得影响登录主流程。
+async function ensureCustomerProfile(userId, openid, phone, profile = {}) {
+  try {
+    if (!userId && !openid) return
+    const nickname = normalizeText(profile.nickname)
+    const avatar = normalizeText(profile.avatar)
+    const col = db.collection('cicada_customers')
+    const matchOr = []
+    if (userId) matchOr.push({ user_id: userId })
+    if (openid) matchOr.push({ openid })
+    const found = await col.where(db.command.or(matchOr)).limit(1).get()
+    const now = Date.now()
+    if (!found.data.length) {
+      await col.add({
+        name: nickname || normalizeText(phone) || '微信客户',
+        contact: '',
+        phone: normalizeText(phone),
+        customer_type: 'clinic',
+        source: 'miniapp',
+        address: '',
+        tags: [],
+        user_id: userId || '',
+        openid: openid || '',
+        nickname,
+        avatar,
+        status: 'active',
+        create_time: now,
+        update_time: now
+      })
+    } else {
+      const c = found.data[0]
+      const update = {}
+      if (userId && c.user_id !== userId) update.user_id = userId
+      if (openid && c.openid !== openid) update.openid = openid
+      if (phone && !c.phone && c.status !== 'cancelled') update.phone = normalizeText(phone)
+      if (nickname && c.nickname !== nickname) update.nickname = nickname
+      if (avatar && c.avatar !== avatar) update.avatar = avatar
+      if (Object.keys(update).length) {
+        update.update_time = now
+        await col.doc(c._id).update(update)
+      }
+    }
+  } catch (e) {
+    console.error('自动建立客户档案失败:', e && e.message)
+  }
+}
+
 function getClientIdentity(ctx, fallback = 'anonymous') {
   const clientInfo = ctx && ctx.getClientInfo ? ctx.getClientInfo() : {}
   return clientInfo.clientIP || clientInfo.ip || clientInfo.userAgent || fallback
@@ -226,6 +274,8 @@ module.exports = {
         await col.doc(userId).update(update)
       }
 
+      await ensureCustomerProfile(userId, openid, phone)
+
       return {
         code: 0,
         message: '登录成功',
@@ -277,6 +327,8 @@ module.exports = {
         role = user.role
         await col.doc(userId).update({ token, token_expire: tokenExpire, last_login: now })
       }
+
+      await ensureCustomerProfile(userId, openid, phone)
 
       return {
         code: 0,

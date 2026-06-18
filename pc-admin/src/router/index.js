@@ -5,6 +5,7 @@ import Home from '../views/Home.vue'
 import WorkOrder from '../views/WorkOrder.vue'
 import FaultDB from '../views/FaultDB.vue'
 import Users from '../views/Users.vue'
+import CustomerManagement from '../views/CustomerManagement.vue'
 import Feedback from '../views/Feedback.vue'
 import Settings from '../views/Settings.vue'
 import Summary from '../views/Summary.vue'
@@ -21,6 +22,7 @@ const router = createRouter({
       children: [
         { path: 'home', name: 'Home', component: Home },
         { path: 'workorder', name: 'WorkOrder', component: WorkOrder },
+        { path: 'customers', name: 'CustomerManagement', component: CustomerManagement },
         { path: 'faultdb', name: 'FaultDB', component: FaultDB },
         { path: 'users', name: 'Users', component: Users },
         { path: 'feedback', name: 'Feedback', component: Feedback },

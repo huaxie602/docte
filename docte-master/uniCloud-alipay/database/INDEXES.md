@@ -30,6 +30,28 @@ Create these indexes in the uniCloud database console before production traffic.
 
 - `user_id, create_time desc`
 - `user_id, sn`
+- `customer_id, create_time desc`
+- `sn`
+
+## cicada_customers
+
+- `status, create_time desc`
+- `customer_type, status`
+- `phone`  （手机号重复校验）
+- `user_id`
+- `openid`
+- `dealer_id`
+- `tags`  （多键索引，按标签筛选）
+
+## cicada_customer_tags
+
+- `name` unique
+- `sort, create_time`
+
+## cicada_customer_logs
+
+- `target_id, create_time desc`
+- `create_time desc`
 
 ## cicada_addresses
 

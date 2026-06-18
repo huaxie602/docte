@@ -12,6 +12,7 @@
       <el-menu :default-active="activeMenu" class="el-menu-vertical" @select="handleMenuSelect">
         <el-menu-item index="home"><el-icon><HomeFilled /></el-icon><span>工作台首页</span></el-menu-item>
         <el-menu-item index="workorder"><el-icon><Document /></el-icon><span>报修工单管理</span></el-menu-item>
+        <el-menu-item index="customers"><el-icon><Avatar /></el-icon><span>客户管理</span></el-menu-item>
         <el-menu-item index="faultdb"><el-icon><Warning /></el-icon><span>产品故障知识库</span></el-menu-item>
         <el-menu-item index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
         <el-menu-item index="feedback"><el-icon><ChatDotSquare /></el-icon><span>投诉与建议</span></el-menu-item>
