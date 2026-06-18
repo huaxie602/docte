@@ -76,8 +76,8 @@ export const getUserInfo = async () => {
   return userInfo
 }
 
-export const loginWithWechat = (params = {}) => {
-  return runLogin('loginWithWechat', params)
+// 微信授权登录统一走 login({ code, phoneCode })（code 换 openid、phoneCode 换真实手机号）。
+// 原 loginWithWechat 已随后端废弃移除。
+export const wechatLogin = (params = {}) => {
+  return runLogin('login', params)
 }
-
-export const wechatLogin = loginWithWechat

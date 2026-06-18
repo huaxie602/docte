@@ -131,7 +131,63 @@ export const getFeePolicy = async () => {
 	return settingDoc('收费指南', settings.fee_description || settings.fee_policy)
 }
 
+// 按机型保修规则 + 延保政策
+export const getWarrantyExtra = async () => {
+	const settings = await getPublicCloudObject().getSettings({
+		keys: ['warranty_rules', 'extended_warranty_desc', 'extended_warranty_fee', 'extended_warranty_rules']
+	}).then(unwrapCloudResult)
+
+	let rules = []
+	try {
+		const parsed = settings.warranty_rules ? JSON.parse(settings.warranty_rules) : []
+		if (Array.isArray(parsed)) rules = parsed
+	} catch (e) {
+		rules = []
+	}
+
+	// 按机型分类分组
+	const groupMap = {}
+	const order = []
+	rules.forEach(rule => {
+		const category = (rule.category || '其他').trim() || '其他'
+		if (!groupMap[category]) { groupMap[category] = []; order.push(category) }
+		groupMap[category].push({ model: rule.model || '', warrantyPeriod: rule.warrantyPeriod || '', terms: rule.terms || '' })
+	})
+	const groups = order.map(category => ({ category, items: groupMap[category] }))
+
+	return {
+		groups,
+		extended: {
+			desc: settings.extended_warranty_desc || '',
+			fee: settings.extended_warranty_fee || '',
+			rules: settings.extended_warranty_rules || ''
+		}
+	}
+}
+
+// 过保收费阶梯模板
+export const getFeeTiers = async () => {
+	const settings = await getPublicCloudObject().getSettings({ keys: ['fee_tier_templates'] }).then(unwrapCloudResult)
+	try {
+		const parsed = settings.fee_tier_templates ? JSON.parse(settings.fee_tier_templates) : []
+		return Array.isArray(parsed) ? parsed : []
+	} catch (e) {
+		return []
+	}
+}
+
 export const getGuide = (type) => getPublicCloudObject().getGuide({ type }).then(unwrapCloudResult)
+
+// 首页教程弹窗配置
+export const getHomeGuidePopup = async () => {
+	const settings = await getPublicCloudObject().getSettings({
+		keys: ['home_guide_popup_enabled', 'home_guide_popup_content']
+	}).then(unwrapCloudResult)
+	return {
+		enabled: settings.home_guide_popup_enabled === '1' || settings.home_guide_popup_enabled === true,
+		content: settings.home_guide_popup_content || ''
+	}
+}
 
 export const getContact = async () => {
 	const settings = await getPublicCloudObject().getSettings({
@@ -286,3 +342,41 @@ export const getComplaintList = (data = {}) => getUserCloudObject()
 	.then(unwrapCloudResult)
 
 export const getProductCategories = () => getPublicCloudObject().getCategories({}).then(unwrapCloudResult)
+
+// 隐私与合规配置（隐私政策/更新公告/注销规则/数据收集告知/资质公示）
+export const getCompliance = async () => {
+	const settings = await getPublicCloudObject().getSettings({
+		keys: ['privacy_policy', 'privacy_update_notice', 'account_cancellation_policy', 'data_collection_notice', 'qualifications']
+	}).then(unwrapCloudResult)
+
+	let qualifications = []
+	try {
+		const parsed = settings.qualifications ? JSON.parse(settings.qualifications) : []
+		if (Array.isArray(parsed)) qualifications = parsed
+	} catch (e) {
+		qualifications = []
+	}
+
+	// 把资质图片的 cloud:// 地址解析为临时可访问地址
+	const cloudIds = qualifications
+		.filter(it => it && it.type === 'image' && /^cloud:\/\//i.test(String(it.imageUrl || '')))
+		.map(it => it.imageUrl)
+	if (cloudIds.length) {
+		try {
+			const res = await uniCloud.getTempFileURL({ fileList: cloudIds })
+			const map = {}
+			;(res.fileList || []).forEach(item => { if (item && item.fileID) map[item.fileID] = item.tempFileURL })
+			qualifications = qualifications.map(it => (it.type === 'image' && map[it.imageUrl]) ? { ...it, imageUrl: map[it.imageUrl] } : it)
+		} catch (e) {
+			// 解析失败则保留原始地址
+		}
+	}
+
+	return {
+		privacyPolicy: settings.privacy_policy || '',
+		privacyUpdateNotice: settings.privacy_update_notice || '',
+		cancellationPolicy: settings.account_cancellation_policy || '',
+		dataCollectionNotice: settings.data_collection_notice || '',
+		qualifications
+	}
+}

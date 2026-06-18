@@ -338,6 +338,15 @@
               </div>
               <div class="quote-item-list">
                 <div v-for="(item, index) in quoteForm.items" :key="item.localId" class="quote-item-editor">
+                  <el-select
+                    v-if="canPerformOrderAction('issue_quote') && feeTiers.length"
+                    :model-value="''"
+                    placeholder="选用标准收费项（自动填项目与工时费）"
+                    size="small"
+                    @change="(v) => applyFeeTier(item, v)"
+                  >
+                    <el-option v-for="(t, i) in feeTiers" :key="i" :label="`${t.name}　¥${t.price}${t.unit ? '/' + t.unit : ''}`" :value="i" />
+                  </el-select>
                   <el-input v-model="item.name" :disabled="!canPerformOrderAction('issue_quote')" placeholder="维修项目，如更换轴承/检测清洁"></el-input>
                   <el-input v-model="item.desc" :disabled="!canPerformOrderAction('issue_quote')" placeholder="项目说明，可选"></el-input>
                   <div class="quote-fee-row">
@@ -348,6 +357,16 @@
                 </div>
               </div>
               <el-button v-if="canPerformOrderAction('issue_quote')" type="primary" plain size="small" @click="addQuoteItem">添加费用项</el-button>
+              <el-select
+                v-if="canPerformOrderAction('issue_quote') && quoteRemarkTemplates.length"
+                :model-value="''"
+                placeholder="选用备注模板填充到下方备注"
+                size="small"
+                style="width:100%; margin-top:8px;"
+                @change="applyQuoteTemplate"
+              >
+                <el-option v-for="(t, i) in quoteRemarkTemplates" :key="i" :label="t.title" :value="i" />
+              </el-select>
               <el-input
                 v-model="quoteForm.remark"
                 :disabled="!canPerformOrderAction('issue_quote')"
@@ -648,11 +667,11 @@ import { ref, reactive, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchImportLogistics, batchUpdateShipping, getOrderList, getWorkflowConfig, updateInvoiceStatus, updateOrderQuote, updateOrderStatus, updatePaymentStatus, updateRemarks } from '../api/order.js'
-import { getSettings } from '../api/admin.js'
+import { getSettings, getTempFileURL } from '../api/admin.js'
 import { exportOrdersToWorkbook, formatOrderAttachments, formatOrderItems } from '../utils/orderExport.js'
 import { transformOrders } from '../utils/orderTransform.js'
 import { toEnglishStatus } from '../utils/orderStatus.js'
-import { openPrintWindow, parsePrintConfig } from '../utils/orderPrint.js'
+import { openPrintWindow, parsePrintConfig, pickPrintTemplate } from '../utils/orderPrint.js'
 import { downloadShippingTemplate, getLogisticsImportTypeLabel, parseShippingExcelFile } from '../utils/shippingImport.js'
 
 const route = useRoute()
@@ -1019,6 +1038,31 @@ const quoteForm = reactive({
 const quotePartsFee = computed(() => quoteForm.items.reduce((total, item) => total + (Number(item.partsFee) || 0), 0))
 const quoteLaborFee = computed(() => quoteForm.items.reduce((total, item) => total + (Number(item.laborFee) || 0), 0))
 const quoteTotal = computed(() => quotePartsFee.value + quoteLaborFee.value)
+
+// 报价备注模板库 / 过保收费阶梯模板（来自系统设置）
+const quoteRemarkTemplates = ref([])
+const feeTiers = ref([])
+const parseSettingsArray = (value) => {
+  try {
+    const parsed = value ? JSON.parse(value) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch (error) {
+    return []
+  }
+}
+const applyFeeTier = (item, index) => {
+  const tier = feeTiers.value[index]
+  if (!tier) return
+  item.name = tier.name || item.name
+  item.laborFee = Number(tier.price) || 0
+}
+const applyQuoteTemplate = (index) => {
+  const tpl = quoteRemarkTemplates.value[index]
+  if (!tpl) return
+  quoteForm.remark = quoteForm.remark
+    ? `${quoteForm.remark}\n${tpl.content || ''}`
+    : (tpl.content || '')
+}
 
 const normalizeQuoteItems = (items = []) => {
   return (Array.isArray(items) ? items : []).map(createQuoteItem)
@@ -1656,7 +1700,19 @@ const loadPrintConfig = async () => {
   try {
     const token = localStorage.getItem('adminToken')
     const data = await getSettings(token)
-    printConfig.value = parsePrintConfig(data && data.print_config)
+    const template = pickPrintTemplate(data && data.print_templates, data && data.print_config, 'repair_order')
+    // logo 存的是云存储 fileID，打印窗口无法直接加载，需解析成临时 http 地址
+    if (template.logoUrl && /^cloud:\/\//i.test(template.logoUrl)) {
+      try {
+        const map = await getTempFileURL(token, [template.logoUrl])
+        template.logoUrl = (map && map[template.logoUrl]) || ''
+      } catch (e) {
+        template.logoUrl = ''
+      }
+    }
+    printConfig.value = template
+    quoteRemarkTemplates.value = parseSettingsArray(data && data.quote_remark_templates)
+    feeTiers.value = parseSettingsArray(data && data.fee_tier_templates)
   } catch (error) {
     printConfig.value = parsePrintConfig()
   }

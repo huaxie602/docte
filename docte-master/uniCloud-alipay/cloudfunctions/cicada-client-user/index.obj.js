@@ -291,54 +291,8 @@ module.exports = {
     }
   },
 
-  async loginWithWechat({ code }) {
-    try {
-      if (!code) return { code: -1, message: '缺少 code' }
-      await checkRateLimit('login', `${getClientIdentity(this)}:${code}`)
-
-      if (!WX_APPID || !WX_SECRET) {
-        return { code: -1, message: '服务端未配置微信环境变量，请在 uniCloud 控制台设置 WX_APPID 和 WX_SECRET' }
-      }
-
-      const wxRes = await uniCloud.httpclient.request(
-        `https://api.weixin.qq.com/sns/jscode2session?appid=${WX_APPID}&secret=${WX_SECRET}&js_code=${code}&grant_type=authorization_code`,
-        { dataType: 'json' }
-      )
-      const { openid, errmsg } = wxRes.data
-      if (!openid) return { code: -1, message: errmsg || '获取 openid 失败' }
-
-      const col = db.collection('cicada_users')
-      const now = Date.now()
-      const token = genToken()
-      const tokenExpire = now + TOKEN_EXPIRE
-
-      const found = await col.where({ openid }).limit(1).get()
-      let userId, phone, role
-
-      if (!found.data.length) {
-        phone = `138${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`
-        role = 'user'
-        const ins = await col.add({ openid, phone, role, token, token_expire: tokenExpire, create_time: now, last_login: now })
-        userId = ins.id
-      } else {
-        const user = found.data[0]
-        userId = user._id
-        phone = user.phone
-        role = user.role
-        await col.doc(userId).update({ token, token_expire: tokenExpire, last_login: now })
-      }
-
-      await ensureCustomerProfile(userId, openid, phone)
-
-      return {
-        code: 0,
-        message: '登录成功',
-        data: { token, userInfo: buildUserInfo({ phone, role }, userId) }
-      }
-    } catch (e) {
-      return { code: -1, message: e.message || '登录失败' }
-    }
-  },
+  // 说明：原 loginWithWechat（仅换 openid + 伪造 138 手机号）已废弃移除。
+  // 小程序端统一走 login({ code, phoneCode })：code 换 openid、phoneCode 换真实手机号。
 
   async devLogin() {
     try {

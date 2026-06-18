@@ -621,7 +621,22 @@
 						<text>{{ item.duration }}</text>
 					</view>
 				</view>
-				<view class="module-section-head single"><text>保修范围</text></view>
+				<template v-if="warrantyGroups.length">
+						<view class="module-section-head single"><text>按机型保修</text></view>
+						<view v-for="group in warrantyGroups" :key="group.category" class="warranty-group">
+							<view class="warranty-group-title">{{ group.category }}</view>
+							<view class="white-list-card">
+								<view v-for="(rule, idx) in group.items" :key="idx" class="warranty-rule-row">
+									<view class="warranty-rule-head">
+										<text class="warranty-rule-model">{{ rule.model || group.category }}</text>
+										<text class="warranty-rule-period">{{ rule.warrantyPeriod }}</text>
+									</view>
+									<text v-if="rule.terms" class="warranty-rule-terms">{{ rule.terms }}</text>
+								</view>
+							</view>
+						</view>
+					</template>
+					<view class="module-section-head single"><text>保修范围</text></view>
 				<view class="text-card">
 					<view v-for="(item, index) in warrantyRanges" :key="item" class="number-line">
 						<text>{{ index + 1 }}</text>
@@ -635,7 +650,15 @@
 						<view><text>{{ item.title }}</text><text>{{ item.desc }}</text></view>
 					</view>
 				</view>
-				<view v-if="!warrantyDoc.content" class="doc-paper warranty-paper">
+				<template v-if="extendedWarranty.desc || extendedWarranty.fee || extendedWarranty.rules">
+						<view class="module-section-head single"><text>延保政策</text></view>
+						<view class="text-card warranty-extended">
+							<view v-if="extendedWarranty.desc" class="ext-block"><text class="ext-label">服务说明</text><text class="ext-text">{{ extendedWarranty.desc }}</text></view>
+							<view v-if="extendedWarranty.fee" class="ext-block"><text class="ext-label">收费标准</text><text class="ext-text">{{ extendedWarranty.fee }}</text></view>
+							<view v-if="extendedWarranty.rules" class="ext-block"><text class="ext-label">生效规则</text><text class="ext-text">{{ extendedWarranty.rules }}</text></view>
+						</view>
+					</template>
+					<view v-if="!warrantyDoc.content" class="doc-paper warranty-paper">
 					<text class="paper-title">保修政策</text>
 					<view v-for="section in warrantyTerms" :key="section.title" class="paper-section">
 						<text class="paper-section-title">{{ section.title }}</text>
@@ -657,7 +680,14 @@
 					<view :class="['glyph', 'glyph-' + activeDoc.icon]"><view class="glyph-extra"></view></view>
 					<view><text>{{ activeDoc.title }}</text><text>{{ activeDoc.lead }}</text></view>
 				</view>
-				<view v-if="activeDoc.content" class="doc-paper">
+				<view v-if="activeModule === 'fees' && feeTiers.length" class="fee-tier-card">
+						<view class="fee-tier-head"><text>收费项</text><text>标准价</text></view>
+						<view v-for="(tier, idx) in feeTiers" :key="idx" class="fee-tier-row">
+							<view class="fee-tier-name"><text>{{ tier.name }}</text><text v-if="tier.note" class="fee-tier-note">{{ tier.note }}</text></view>
+							<text class="fee-tier-price">¥{{ tier.price }}<text v-if="tier.unit" class="fee-tier-unit">/{{ tier.unit }}</text></text>
+						</view>
+					</view>
+					<view v-if="activeDoc.content" class="doc-paper">
 					<rich-text :nodes="activeDoc.content"></rich-text>
 				</view>
 				<view v-else class="doc-paper">
@@ -670,7 +700,14 @@
 						</view>
 					</view>
 				</view>
-				<view v-if="activeDoc.fileUrl" class="guide-file-card">
+				<view v-if="activeDoc.media && activeDoc.media.length" class="guide-media-list">
+						<view v-for="(m, i) in activeDoc.media" :key="i" class="guide-media-item tap" @click="openGuideMedia(m)">
+							<text class="guide-media-type">{{ m.type === 'video' ? '▶ 视频' : m.type === 'image' ? '图片' : '文档' }}</text>
+							<text class="guide-media-name">{{ m.name }}</text>
+							<text class="guide-media-open">打开</text>
+						</view>
+					</view>
+					<view v-if="activeDoc.fileUrl" class="guide-file-card">
 					<view>
 						<text>后台上传文档</text>
 						<text>{{ activeDoc.fileName || '操作教程文档' }}</text>
@@ -1299,6 +1336,8 @@
 			</view>
 			<view class="repair-tool-cancel tap" @click="showRepairTools = false">取消</view>
 		</view>
+		<PrivacyConsent />
+		<PolicyDialog v-model:visible="homeGuideVisible" title="操作指引" :content="homeGuideContent" />
 	</view>
 </template>
 
@@ -1306,6 +1345,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app'
 import BottomTabbar from '@/components/BottomTabbar.vue'
+import PrivacyConsent from '@/components/PrivacyConsent.vue'
+import PolicyDialog from '@/components/PolicyDialog.vue'
 import { cicadaAssets } from '@/config/cicada-assets'
 import {
 	getContact,
@@ -1318,6 +1359,9 @@ import {
 	applyInvoice,
 	getWechat,
 	getWarrantyPolicy,
+	getWarrantyExtra,
+	getFeeTiers,
+	getHomeGuidePopup,
 	queryPackageStatus,
 	searchFault,
 	addAddress,
@@ -1591,6 +1635,31 @@ const warrantyTerms = [
 ]
 
 logBoot('static blocks ready')
+
+// 按机型保修分组 / 延保政策 / 过保收费阶梯（来自后台配置）
+const warrantyGroups = ref([])
+const extendedWarranty = ref({ desc: '', fee: '', rules: '' })
+const feeTiers = ref([])
+
+// 首页教程弹窗
+const homeGuideVisible = ref(false)
+const homeGuideContent = ref('')
+const HOME_GUIDE_SEEN_KEY = 'home_guide_popup_seen'
+const maybeShowHomeGuidePopup = async () => {
+	try {
+		if (uni.getStorageSync(HOME_GUIDE_SEEN_KEY)) return
+		// 隐私同意弹窗优先；未同意时本次不弹教程
+		if (!uni.getStorageSync('privacy_consented')) return
+		const data = await getHomeGuidePopup()
+		if (data.enabled && data.content) {
+			homeGuideContent.value = data.content
+			homeGuideVisible.value = true
+			uni.setStorageSync(HOME_GUIDE_SEEN_KEY, '1')
+		}
+	} catch (e) {
+		// 忽略弹窗加载失败
+	}
+}
 
 const docModuleIds = ['fees', 'guide-quick', 'guide-repair', 'guide-query', 'guide-invoice']
 
@@ -2282,6 +2351,32 @@ const openGuideFile = async (doc = {}) => {
 		console.warn('open guide file failed:', error)
 		uni.hideLoading()
 		uni.showToast({ title: '文档打开失败，请稍后重试', icon: 'none' })
+	}
+}
+
+// 打开教程媒体：图片内联预览，视频用 previewMedia，文档走文件打开
+const openGuideMedia = async (item = {}) => {
+	if (!item || !item.url) return
+	try {
+		uni.showLoading({ title: '打开中' })
+		const url = await resolveGuideFileUrl(item.url)
+		uni.hideLoading()
+		if (item.type === 'image') {
+			uni.previewImage({ urls: [url], current: url })
+			return
+		}
+		if (item.type === 'video') {
+			if (uni.previewMedia) {
+				uni.previewMedia({ sources: [{ url, type: 'video' }], current: 0 })
+			} else {
+				uni.navigateTo && uni.navigateTo({ url: `/pages/index/index?video=${encodeURIComponent(url)}`, fail: () => {} })
+			}
+			return
+		}
+		await openGuideFile({ fileUrl: item.url, fileName: item.name })
+	} catch (error) {
+		uni.hideLoading()
+		uni.showToast({ title: '媒体打开失败，请稍后重试', icon: 'none' })
 	}
 }
 
@@ -3736,6 +3831,15 @@ const loadRemoteContent = async () => {
 		getFeePolicy()
 			.then((doc) => updateDoc('fees', doc))
 			.catch((error) => console.warn('fee fallback:', error)),
+		getWarrantyExtra()
+			.then((data = {}) => {
+				warrantyGroups.value = Array.isArray(data.groups) ? data.groups : []
+				extendedWarranty.value = data.extended || { desc: '', fee: '', rules: '' }
+			})
+			.catch((error) => console.warn('warranty extra fallback:', error)),
+		getFeeTiers()
+			.then((list) => { feeTiers.value = Array.isArray(list) ? list : [] })
+			.catch((error) => console.warn('fee tiers fallback:', error)),
 		getGuide('quick')
 			.then((doc) => updateDoc('guide-quick', doc))
 			.catch((error) => console.warn('quick guide fallback:', error)),
@@ -3793,6 +3897,7 @@ const loadRemoteContent = async () => {
 	]
 
 	await Promise.allSettled(tasks)
+	maybeShowHomeGuidePopup()
 }
 
 onMounted(() => {
@@ -10321,4 +10426,34 @@ onMounted(() => {
 	background: currentColor;
 	box-shadow: 8rpx 0 0 currentColor;
 }
+
+/* 按机型保修 / 延保 / 收费阶梯 */
+.warranty-group { margin-bottom: 16rpx; }
+.warranty-group-title { font-size: 27rpx; font-weight: 600; color: #1E6FE0; margin: 12rpx 0 8rpx; }
+.warranty-rule-row { padding: 16rpx 0; border-bottom: 1px solid #f0f2f5; }
+.warranty-rule-row:last-child { border-bottom: none; }
+.warranty-rule-head { display: flex; justify-content: space-between; align-items: center; }
+.warranty-rule-model { font-size: 27rpx; color: #1d2129; font-weight: 500; }
+.warranty-rule-period { font-size: 25rpx; color: #C97A6B; font-weight: 600; }
+.warranty-rule-terms { display: block; margin-top: 6rpx; font-size: 24rpx; line-height: 1.6; color: #86909c; }
+.warranty-extended .ext-block { margin-bottom: 14rpx; }
+.warranty-extended .ext-block:last-child { margin-bottom: 0; }
+.ext-label { display: block; font-size: 25rpx; font-weight: 600; color: #1d2129; margin-bottom: 4rpx; }
+.ext-text { font-size: 25rpx; line-height: 1.7; color: #4e5969; white-space: pre-wrap; }
+.fee-tier-card { background: #fff; border-radius: 16rpx; padding: 8rpx 24rpx; margin-bottom: 20rpx; }
+.fee-tier-head { display: flex; justify-content: space-between; padding: 16rpx 0; font-size: 24rpx; color: #86909c; border-bottom: 1px solid #f0f2f5; }
+.fee-tier-row { display: flex; justify-content: space-between; align-items: center; padding: 18rpx 0; border-bottom: 1px solid #f7f8fa; }
+.fee-tier-row:last-child { border-bottom: none; }
+.fee-tier-name { display: flex; flex-direction: column; }
+.fee-tier-name > text:first-child { font-size: 27rpx; color: #1d2129; }
+.fee-tier-note { font-size: 22rpx; color: #86909c; margin-top: 4rpx; }
+.fee-tier-price { font-size: 29rpx; font-weight: 700; color: #D97706; }
+.fee-tier-unit { font-size: 22rpx; font-weight: 400; color: #86909c; }
+/* 教程媒体列表 */
+.guide-media-list { background: #fff; border-radius: 16rpx; padding: 8rpx 24rpx; margin-bottom: 20rpx; }
+.guide-media-item { display: flex; align-items: center; gap: 16rpx; padding: 20rpx 0; border-bottom: 1px solid #f7f8fa; }
+.guide-media-item:last-child { border-bottom: none; }
+.guide-media-type { font-size: 24rpx; color: #1E6FE0; flex-shrink: 0; }
+.guide-media-name { flex: 1; font-size: 26rpx; color: #1d2129; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.guide-media-open { font-size: 24rpx; color: #86909c; flex-shrink: 0; }
 </style>

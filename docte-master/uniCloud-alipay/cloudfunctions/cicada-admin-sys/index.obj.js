@@ -560,33 +560,23 @@ module.exports = {
 
   async updateGuide(params) {
     try {
-      let token, guide_id, file_name, file_url, file_type, desc
-      if (params && params.token) {
-        ({ token, guide_id, file_name, file_url, file_type, desc } = params)
-      } else if (this.params) {
-        ({ token, guide_id, file_name, file_url, file_type, desc } = this.params)
-      }
+      const data = (params && params.token) ? params : (this.params || {})
+      const { token, guide_id } = data
       await verifyAdminToken(token, ['admin'])
 
-      if (!guide_id || !file_name) {
+      if (!guide_id) {
         return { code: -1, msg: '参数不完整' }
       }
 
       const now = Date.now()
-      const updateData = {
-        file_name,
-        update_time: now
-      }
-
-      if (file_url) {
-        updateData.file_url = file_url
-      }
-      if (file_type) {
-        updateData.file_type = file_type
-      }
-      if (desc !== undefined) {
-        updateData.desc = desc
-      }
+      const updateData = { update_time: now }
+      // 仅写入传入的字段，支持图文/媒体/分类/受众等扩展
+      const assignable = ['file_name', 'file_url', 'file_type', 'desc', 'content', 'category', 'audience']
+      assignable.forEach(field => {
+        if (data[field] !== undefined) updateData[field] = data[field]
+      })
+      if (Array.isArray(data.media)) updateData.media = data.media
+      if (data.sort !== undefined) updateData.sort = Number(data.sort) || 0
 
       const res = await db.collection('cicada_guides').doc(guide_id).update(updateData)
 
@@ -600,15 +590,72 @@ module.exports = {
     }
   },
 
+  // 新增自定义教程（区分客户端/工程师端、按分类）
+  async createGuide(params) {
+    try {
+      const data = (params && params.token) ? params : (this.params || {})
+      const { token } = data
+      await verifyAdminToken(token, ['admin'])
+
+      const category = String(data.category || '').trim()
+      if (!category) return { code: -1, msg: '请填写教程栏目/分类' }
+
+      const now = Date.now()
+      const doc = {
+        type: '',
+        category,
+        audience: data.audience === 'engineer' ? 'engineer' : 'client',
+        desc: data.desc || '',
+        content: data.content || '',
+        media: Array.isArray(data.media) ? data.media : [],
+        file_name: data.file_name || '',
+        file_url: data.file_url || '',
+        file_type: data.file_type || '',
+        sort: Number(data.sort) || 99,
+        update_time: now
+      }
+      const res = await db.collection('cicada_guides').add(doc)
+      return { code: 0, data: { _id: res.id || (res.ids && res.ids[0]) } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 删除教程（固定类型 quick/repair/query/invoice 不允许删除）
+  async deleteGuide(params) {
+    try {
+      const data = (params && params.token) ? params : (this.params || {})
+      const { token, guide_id } = data
+      await verifyAdminToken(token, ['admin'])
+
+      if (!guide_id) return { code: -1, msg: '参数不完整' }
+
+      const existing = await db.collection('cicada_guides').doc(guide_id).get()
+      const guide = existing.data && existing.data[0]
+      if (!guide) return { code: -1, msg: '教程不存在' }
+      if (matchGuideType(guide)) return { code: -1, msg: '固定教程栏目不可删除' }
+
+      await db.collection('cicada_guides').doc(guide_id).remove()
+      return { code: 0 }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
   async uploadGuideFile(params) {
+    return this.uploadFile(params)
+  },
+
+  // 通用文件上传：dir 控制云存储目录（guides/ compliance/ tutorials/ print/）
+  async uploadFile(params) {
     try {
       const httpInfo = this.getHttpInfo && this.getHttpInfo()
-      let token, fileContent, fileName, fileType
+      let token, fileContent, fileName, fileType, dir
       if (httpInfo && httpInfo.body) {
         const body = JSON.parse(httpInfo.body)
-        ;({ token, fileContent, fileName, fileType } = body)
+        ;({ token, fileContent, fileName, fileType, dir } = body)
       } else {
-        ;({ token, fileContent, fileName, fileType } = params || {})
+        ;({ token, fileContent, fileName, fileType, dir } = params || {})
       }
       await verifyAdminToken(token, ['admin'])
 
@@ -616,14 +663,49 @@ module.exports = {
 
       const buffer = Buffer.from(fileContent, 'base64')
       const safeFileName = String(fileName).replace(/[\\/:*?"<>|]/g, '_')
-      const cloudPath = `guides/${Date.now()}_${safeFileName}`
+      const safeDir = String(dir || 'guides/').replace(/[^a-zA-Z0-9_\-/]/g, '').replace(/\/+$/, '') || 'guides'
+      const cloudPath = `${safeDir}/${Date.now()}_${safeFileName}`
       const res = await uniCloud.uploadFile({
         cloudPath,
         fileContent: buffer,
         fileType: fileType || 'application/octet-stream'
       })
 
-      return { code: 0, data: { fileUrl: res.fileID } }
+      // 顺带返回一个临时可访问地址，便于管理端上传后立即预览
+      let tempUrl = ''
+      try {
+        const t = await uniCloud.getTempFileURL({ fileList: [res.fileID] })
+        tempUrl = (t.fileList && t.fileList[0] && t.fileList[0].tempFileURL) || ''
+      } catch (err) {
+        tempUrl = ''
+      }
+
+      return { code: 0, data: { fileUrl: res.fileID, tempUrl } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 把云存储 fileID 列表解析成临时可访问地址（管理端预览已保存的资质图片/logo）
+  async getTempFileURL(params) {
+    try {
+      let token, fileList
+      if (params && params.token) {
+        ({ token, fileList } = params)
+      } else if (this.params) {
+        ({ token, fileList } = this.params)
+      }
+      await verifyAdminToken(token, ['admin', 'engineer'])
+
+      const list = Array.isArray(fileList) ? fileList.filter(Boolean) : []
+      if (!list.length) return { code: 0, data: {} }
+
+      const res = await uniCloud.getTempFileURL({ fileList: list })
+      const map = {}
+      ;(res.fileList || []).forEach(item => {
+        if (item && item.fileID) map[item.fileID] = item.tempFileURL || ''
+      })
+      return { code: 0, data: map }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
