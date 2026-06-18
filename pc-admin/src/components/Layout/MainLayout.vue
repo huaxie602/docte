@@ -10,14 +10,15 @@
       </div>
       <div class="nav-label">MAIN NAVIGATION</div>
       <el-menu :default-active="activeMenu" class="el-menu-vertical" @select="handleMenuSelect">
-        <el-menu-item index="home"><el-icon><HomeFilled /></el-icon><span>工作台首页</span></el-menu-item>
-        <el-menu-item index="workorder"><el-icon><Document /></el-icon><span>报修工单管理</span></el-menu-item>
-        <el-menu-item index="customers"><el-icon><Avatar /></el-icon><span>客户管理</span></el-menu-item>
-        <el-menu-item index="faultdb"><el-icon><Warning /></el-icon><span>产品故障知识库</span></el-menu-item>
-        <el-menu-item index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
-        <el-menu-item index="feedback"><el-icon><ChatDotSquare /></el-icon><span>投诉与建议</span></el-menu-item>
-        <el-menu-item index="summary"><el-icon><DataAnalysis /></el-icon><span>运营汇总看板</span></el-menu-item>
-        <el-menu-item index="settings"><el-icon><Setting /></el-icon><span>小程序配置</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('home')" index="home"><el-icon><HomeFilled /></el-icon><span>工作台首页</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('workorder')" index="workorder"><el-icon><Document /></el-icon><span>报修工单管理</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('customers')" index="customers"><el-icon><Avatar /></el-icon><span>客户管理</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('faultdb')" index="faultdb"><el-icon><Warning /></el-icon><span>产品故障知识库</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('users')" index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('feedback')" index="feedback"><el-icon><ChatDotSquare /></el-icon><span>投诉与建议</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('summary')" index="summary"><el-icon><DataAnalysis /></el-icon><span>运营汇总看板</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('audit')" index="audit"><el-icon><Tickets /></el-icon><span>操作审计日志</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('settings')" index="settings"><el-icon><Setting /></el-icon><span>小程序配置</span></el-menu-item>
       </el-menu>
       <div class="sidebar-footer">
         <div class="status-card">
@@ -96,6 +97,7 @@ import { ref, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { changeMyPassword } from '../../api/admin.js'
+import { canAccessMenu } from '../../config/menuAccess.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -109,10 +111,11 @@ const menuTitles = {
   users: '用户管理',
   settings: '小程序图文及政策配置',
   feedback: '客户投诉与建议列表',
-  summary: '运营汇总看板'
+  summary: '运营汇总看板',
+  audit: '工单操作审计日志（合规备查）'
 }
 
-const roleMap = { admin: '管理员', engineer: '工程师', finance: '财务', support: '客服' }
+const roleMap = { superadmin: '超级管理员', admin: '管理员', engineer: '工程师', finance: '财务', support: '客服' }
 const getMenuFromPath = () => route.path.replace(/^\//, '') || 'home'
 const activeMenu = ref(getMenuFromPath())
 

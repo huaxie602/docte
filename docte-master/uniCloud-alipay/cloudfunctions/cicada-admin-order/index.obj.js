@@ -1631,6 +1631,96 @@ module.exports = {
   },
 
   // 获取统计数据
+  // 工单操作审计日志查询（医疗器械合规备查）：按工单号/操作类型/时间范围筛选，分页按时间倒序
+  async getOrderEvents(params) {
+    try {
+      requireAdminPermission(this, 'view_audit_log')
+      const body = pickParam(this, params)
+      const orderNo = String(body.orderNo || '').trim()
+      const action = String(body.action || '').trim()
+      const actorName = String(body.actorName || '').trim()
+      const startTime = body.startTime ? Number(body.startTime) : null
+      const endTime = body.endTime ? Number(body.endTime) : null
+
+      let page = Number(body.page) || 1
+      let pageSize = Number(body.pageSize) || 20
+      if (page < 1) page = 1
+      if (pageSize < 1) pageSize = 20
+      if (pageSize > 200) pageSize = 200
+
+      const where = {}
+      if (orderNo) where.order_no = orderNo
+      if (action) where.action = action
+      if (actorName) where.actor_name = actorName
+      if (startTime && endTime) where.create_time = dbCmd.gte(startTime).and(dbCmd.lte(endTime))
+      else if (startTime) where.create_time = dbCmd.gte(startTime)
+      else if (endTime) where.create_time = dbCmd.lte(endTime)
+
+      const offset = (page - 1) * pageSize
+      const collection = db.collection('cicada_order_events')
+      const [countRes, listRes] = await Promise.all([
+        collection.where(where).count(),
+        collection.where(where).orderBy('create_time', 'desc').skip(offset).limit(pageSize).get()
+      ])
+
+      return {
+        code: 0,
+        data: {
+          list: listRes.data || [],
+          total: countRes.total,
+          page,
+          pageSize
+        }
+      }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 售后工程师绩效：统计指定月份各工程师的完工工单数（含负责品类/区域），默认当月
+  async getEngineerPerformance(params) {
+    try {
+      requireAdminPermission(this, 'manage_staff')
+      const body = pickParam(this, params)
+      const now = new Date()
+      const year = Number(body.year) || now.getFullYear()
+      const month = Number(body.month) || (now.getMonth() + 1)
+      const monthStart = new Date(year, month - 1, 1).getTime()
+      const monthEnd = new Date(year, month, 1).getTime()
+
+      // 当月完工工单（完工时间近似取 update_time），仅取 engineer_id，JS 侧按工程师聚合
+      const ordersRes = await db.collection('cicada_orders')
+        .where({ status: 'completed', update_time: dbCmd.gte(monthStart).and(dbCmd.lt(monthEnd)) })
+        .field({ engineer_id: true })
+        .limit(2000)
+        .get()
+      const counts = {}
+      ;(ordersRes.data || []).forEach(o => {
+        if (o.engineer_id) counts[o.engineer_id] = (counts[o.engineer_id] || 0) + 1
+      })
+
+      // 工程师/管理员名单及其负责品类、区域
+      const staffRes = await db.collection('cicada_users')
+        .where({ role: dbCmd.in(['engineer', 'admin', 'superadmin']) })
+        .field({ name: true, nickname: true, username: true, role: true, device_categories: true, service_areas: true })
+        .limit(500)
+        .get()
+
+      const list = (staffRes.data || []).map(u => ({
+        engineer_id: u._id,
+        name: u.name || u.nickname || u.username || '',
+        role: u.role,
+        device_categories: u.device_categories || [],
+        service_areas: u.service_areas || [],
+        completed_count: counts[u._id] || 0
+      })).sort((a, b) => b.completed_count - a.completed_count)
+
+      return { code: 0, data: { year, month, list } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
   async getStatistics(params) {
     try {
       requireAdminPermission(this, 'get_stats')

@@ -107,7 +107,7 @@ async function verifyAdminToken(token, allowedRoles = ['admin']) {
   if (!token) throw new Error('鉴权失败')
   const res = await db.collection('cicada_users').where({ token }).limit(1).get()
   const user = res.data[0]
-  if (!user || user.disabled || !allowedRoles.includes(user.role)) {
+  if (!user || user.disabled || (user.role !== 'superadmin' && !allowedRoles.includes(user.role))) {
     throw new Error('无权限')
   }
   if (!user.token_expire || Date.now() > user.token_expire) throw new Error('Token已过期')
@@ -289,6 +289,11 @@ module.exports = {
       if (!user.password_hash || !user.password_salt) {
         Object.assign(updateData, buildPasswordFields(password))
       }
+      // admin_root 紧急救援账号固定为超级管理员（首次登录自愈）
+      if (user.username === 'admin_root' && user.role !== 'superadmin') {
+        updateData.role = 'superadmin'
+        user.role = 'superadmin'
+      }
       await db.collection('cicada_users').doc(user._id).update(updateData)
       await clearAdminLoginFailures(username, loginIp)
 
@@ -396,14 +401,15 @@ module.exports = {
           ;({ token, action, staff } = body)
         }
       }
-      await verifyAdminToken(token, ['admin'])
+      const operator = await verifyAdminToken(token, ['admin'])
       const col = db.collection('cicada_users')
       if (action === 'add') {
         if (!staff || !staff.username || !staff.password) return { code: -1, msg: '账号和密码不能为空' }
         if (!STAFF_ROLES.includes(staff.role)) return { code: -1, msg: '角色不正确' }
+        if (staff.role === 'superadmin' && operator.role !== 'superadmin') return { code: -1, msg: '只有超级管理员可创建超级管理员账号' }
         const exists = await col.where({ username: staff.username }).limit(1).get()
         if (exists.data.length) return { code: -1, msg: '账号已存在' }
-        const data = pickFields(staff, ['username', 'name', 'phone', 'avatar', 'role'])
+        const data = pickFields(staff, ['username', 'name', 'phone', 'avatar', 'role', 'device_categories', 'service_areas'])
         const res = await col.add({
           ...data,
           openid: '',
@@ -414,8 +420,9 @@ module.exports = {
         return { code: 0, data: { id: res.id } }
       } else if (action === 'edit') {
         if (!staff || !staff._id) return { code: -1, msg: '缺少员工ID' }
-        const data = pickFields(staff, ['username', 'name', 'phone', 'avatar', 'role', 'disabled'])
+        const data = pickFields(staff, ['username', 'name', 'phone', 'avatar', 'role', 'disabled', 'device_categories', 'service_areas'])
         if (data.role && !STAFF_ROLES.includes(data.role)) return { code: -1, msg: '角色不正确' }
+        if (data.role === 'superadmin' && operator.role !== 'superadmin') return { code: -1, msg: '只有超级管理员可设置超级管理员角色' }
         if (staff.password) Object.assign(data, buildPasswordFields(staff.password))
         if (!Object.keys(data).length) return { code: -1, msg: '没有可更新的员工字段' }
         const res = await col.where({ _id: staff._id, role: db.command.in(STAFF_ROLES) }).update(data)

@@ -9,7 +9,9 @@ import CustomerManagement from '../views/CustomerManagement.vue'
 import Feedback from '../views/Feedback.vue'
 import Settings from '../views/Settings.vue'
 import Summary from '../views/Summary.vue'
+import AuditLog from '../views/AuditLog.vue'
 import { clearAdminSession } from '../utils/adminSession.js'
+import { canAccessMenu } from '../config/menuAccess.js'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -27,6 +29,7 @@ const router = createRouter({
         { path: 'users', name: 'Users', component: Users },
         { path: 'feedback', name: 'Feedback', component: Feedback },
         { path: 'summary', name: 'Summary', component: Summary },
+        { path: 'audit', name: 'AuditLog', component: AuditLog },
         { path: 'settings', name: 'Settings', component: Settings },
       ]
     }
@@ -42,6 +45,12 @@ router.beforeEach((to, from, next) => {
   if (!token) {
     clearAdminSession()
     next({ name: 'Login', query: { redirect: to.fullPath } })
+    return
+  }
+  // 按角色门禁：无权访问的页面重定向到工作台首页
+  const menu = to.path.replace(/^\//, '')
+  if (menu && !canAccessMenu(menu)) {
+    next({ path: '/home' })
     return
   }
   next()
