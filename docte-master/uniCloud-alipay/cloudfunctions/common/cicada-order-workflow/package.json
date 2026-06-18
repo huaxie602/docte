@@ -1,0 +1,5 @@
+{
+  "name": "cicada-order-workflow",
+  "version": "1.0.0",
+  "description": "订单状态流转与角色权限公共模块"
+}
