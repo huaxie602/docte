@@ -1150,7 +1150,7 @@
 						<image class="qr-image" :src="wechatInfo.qrcodeUrl" mode="aspectFill" show-menu-by-longpress></image>
 					</view>
 					<text class="follow-title">了解产品与售后支持</text>
-					<text class="follow-desc">长按识别二维码关注官方公众号，获取产品资料、维修保养与售后服务支持。</text>
+					<text class="follow-desc">长按识别二维码关注官方服务号，获取产品资料、维修保养与售后服务支持。</text>
 					<official-account class="official-account-btn"></official-account>
 				</view>
 			</view>
@@ -1158,7 +1158,10 @@
 			<view v-else class="mine-body">
 				<view class="mine-hero">
 					<view class="profile-row">
-						<view class="avatar"><text>{{ logged ? userAvatarText : '' }}</text></view>
+						<view class="avatar" :class="{ 'avatar-logged': logged }">
+							<text v-if="logged">{{ userAvatarText }}</text>
+							<image v-else class="avatar-image" src="/static/default-user-avatar.png" mode="aspectFit"></image>
+						</view>
 						<view class="profile-copy">
 							<text class="profile-name">{{ logged ? userDisplayName : '未登录' }}</text>
 							<view v-if="logged" class="profile-meta">
@@ -1234,7 +1237,7 @@
 			<view class="vi-side-wordmark">
 				<text class="vi-en">CICADA</text><text class="vi-tm">®</text>
 			</view>
-			<text class="side-text">思科达公众号</text>
+			<text class="side-text">思科达服务号</text>
 		</view>
 
 		<BottomTabbar v-if="showBottomTabbar" :tabs="tabs" :active-id="activeTab" @select="go" />
@@ -1246,7 +1249,7 @@
 					<image class="qr-image" :src="wechatInfo.qrcodeUrl" mode="aspectFill" show-menu-by-longpress="true"></image>
 				</view>
 				<text class="follow-title">了解产品与售后支持</text>
-				<text class="follow-desc">长按识别二维码关注官方公众号，获取产品资料、维修保养与售后服务支持。</text>
+				<text class="follow-desc">长按识别二维码关注官方服务号，获取产品资料、维修保养与售后服务支持。</text>
 				<official-account class="official-account-btn"></official-account>
 			</view>
 		</view>
@@ -1255,7 +1258,7 @@
 			<view class="qr-modal" @click.stop>
 				<text class="modal-close tap" @click="showQr = false">×</text>
 				<image class="qr-logo" :src="cicadaAssets.logoNew" mode="aspectFit"></image>
-				<text class="qr-title">关注官方公众号</text>
+				<text class="qr-title">关注官方服务号</text>
 				<text class="qr-subtitle">获取最新维修指南 / 售后政策</text>
 				<view class="qr-image-wrap">
 					<image
@@ -3551,7 +3554,7 @@ const submitFeedback = async () => {
 		const record = addLocalFeedbackRecord('submitted')
 		uni.showModal({
 			title: '已生成反馈单',
-			content: `反馈单号：${record.ticketNo}。当前投诉建议接口未开放，前端已先保留记录；后台上线后可同步客服回复与处理状态。`,
+			content: `反馈单号：${record.ticketNo}。网络或登录状态异常，已先在本机保留记录；恢复后可再次提交或由后台同步处理。`,
 			showCancel: false,
 			confirmText: '知道了'
 		})
@@ -5504,11 +5507,23 @@ onMounted(() => {
 	flex-shrink: 0;
 	overflow: hidden;
 	border-radius: 999rpx;
+	background: transparent;
+	box-shadow: none;
+	color: #FFFFFF;
+	font-size: 48rpx;
+	font-weight: 700;
+}
+
+.avatar-logged {
 	background: #FFFFFF;
 	box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15);
 	color: #1E6FE0;
-	font-size: 48rpx;
-	font-weight: 700;
+}
+
+.avatar-image {
+	width: 120rpx;
+	height: 120rpx;
+	display: block;
 }
 
 .profile-copy {

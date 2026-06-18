@@ -27,9 +27,9 @@
 			</view>
 
 			<view class="profile-row">
-				<view class="avatar">
+				<view class="avatar" :class="{ 'avatar-logged': logged }">
 					<text v-if="logged">{{ userAvatarText }}</text>
-					<view v-else class="avatar-empty"></view>
+					<image v-else class="avatar-empty" src="/static/default-user-avatar.png" mode="aspectFit"></image>
 				</view>
 				<view class="profile-copy">
 					<text class="profile-name">{{ logged ? userDisplayName : '未登录' }}</text>
@@ -405,39 +405,24 @@ const goOrder = (type) => {
 	flex-shrink: 0;
 	overflow: hidden;
 	border-radius: 999rpx;
-	background: #FFFFFF;
-	box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15);
-	color: #1E6FE0;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	color: #FFFFFF;
 	font-size: 48rpx;
 	font-weight: 700;
+	box-sizing: border-box;
+}
+
+.avatar-logged {
+	background: #FFFFFF;
+	color: #1E6FE0;
 }
 
 .avatar-empty {
-	width: 64rpx;
-	height: 64rpx;
-	position: relative;
-}
-
-.avatar-empty::before {
-	content: "";
-	position: absolute;
-	left: 18rpx;
-	top: 0;
-	width: 28rpx;
-	height: 28rpx;
-	border-radius: 999rpx;
-	background: #C4D1E4;
-}
-
-.avatar-empty::after {
-	content: "";
-	position: absolute;
-	left: 4rpx;
-	bottom: 0;
-	width: 56rpx;
-	height: 34rpx;
-	border-radius: 999rpx 999rpx 0 0;
-	background: #C4D1E4;
+	width: 120rpx;
+	height: 120rpx;
+	display: block;
 }
 
 .profile-copy {

@@ -118,7 +118,7 @@
 					<image class="qr-image" :src="cicadaAssets.qrWechat" mode="aspectFill" show-menu-by-longpress></image>
 				</view>
 				<text class="follow-title">了解产品与售后支持</text>
-				<text class="follow-desc">长按识别二维码关注官方公众号，或通过电话、邮箱咨询产品资料、维修保养与售后服务。</text>
+				<text class="follow-desc">长按识别二维码关注官方服务号，或通过电话、邮箱咨询产品资料、维修保养与售后服务。</text>
 				<view class="contact-row">
 					<view class="contact-pill tap" @click="callPhone">电话咨询</view>
 					<view class="contact-pill ghost tap" @click="copyEmail">复制邮箱</view>

@@ -9,12 +9,14 @@ export function callCloudFunction(name, data = {}) {
       name,
       data,
       success: (res) => {
-        const result = res.result
+        const result = res.result || {}
         if (result.code === 0) {
           resolve(result.data || result)
         } else {
-          if (result.code === 401) {
+          if ([401, 1004, 100401].includes(Number(result.code))) {
             uni.removeStorageSync('token')
+            uni.removeStorageSync('userInfo')
+            uni.removeStorageSync('isLoggedIn')
           }
           reject(new Error(result.message || result.msg || '请求失败'))
         }
