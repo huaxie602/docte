@@ -57,6 +57,7 @@
             "minifyWXML" : true,
             "lazyCodeLoading" : "requiredComponents"
         },
+        "lazyCodeLoading" : "requiredComponents",
         "usingComponents" : true
     },
     "mp-alipay" : {
