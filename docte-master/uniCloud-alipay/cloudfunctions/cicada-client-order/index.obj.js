@@ -1,9 +1,29 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
-const { assertOrderStatusTransition } = require('cicada-order-workflow')
 
 const CREATE_ORDER_LIMIT = { windowMs: 60 * 1000, max: 8 }
 const WECHAT_PAY_API_BASE = 'https://api.mch.weixin.qq.com'
+const ORDER_STATUS = ['pending', 'sent', 'received', 'inspecting', 'fixing', 'shipped', 'completed', 'cancelled']
+const ORDER_STATUS_LABELS = {
+  pending: '已提交',
+  sent: '运输中',
+  received: '已签收',
+  inspecting: '检测中',
+  fixing: '处理中',
+  shipped: '已回寄',
+  completed: '已完成',
+  cancelled: '已取消'
+}
+const ORDER_STATUS_TRANSITIONS = {
+  pending: ['sent', 'received', 'cancelled'],
+  sent: ['received', 'cancelled'],
+  received: ['inspecting', 'fixing', 'cancelled'],
+  inspecting: ['fixing', 'shipped', 'cancelled'],
+  fixing: ['shipped', 'completed', 'cancelled'],
+  shipped: ['completed'],
+  completed: [],
+  cancelled: []
+}
 const SUBSCRIPTION_SCENE_LABELS = {
   repair_submitted: '报修已提交',
   payment_confirmed: '付款已确认'
@@ -227,6 +247,32 @@ function normalizePage(page, pageSize) {
 
 function normalizeText(value) {
   return String(value === undefined || value === null ? '' : value).trim()
+}
+
+function normalizeStatus(status = '') {
+  return normalizeText(status)
+}
+
+function isKnownOrderStatus(status = '') {
+  return ORDER_STATUS.includes(normalizeStatus(status))
+}
+
+function getOrderStatusLabel(status = '') {
+  const normalized = normalizeStatus(status)
+  return ORDER_STATUS_LABELS[normalized] || normalized || '未知状态'
+}
+
+function assertOrderStatusTransition(fromStatus = '', toStatus = '') {
+  const from = normalizeStatus(fromStatus)
+  const to = normalizeStatus(toStatus)
+  if (!isKnownOrderStatus(to)) throw new Error('工单状态不正确')
+  if (!isKnownOrderStatus(from)) throw new Error('当前工单状态不正确')
+  if (from === to) return true
+  const allowed = ORDER_STATUS_TRANSITIONS[from] || []
+  if (!allowed.includes(to)) {
+    throw new Error(`${getOrderStatusLabel(from)}工单不能改为${getOrderStatusLabel(to)}`)
+  }
+  return true
 }
 
 function normalizePhoneLast4(value) {

@@ -85,7 +85,9 @@ const normalizeSubmitRepairPayload = (data = {}) => {
 }
 
 export const getRepairList = (params = {}) => {
-  return getCloudObject().getOrderList(withToken(normalizePageParams(params))).then(unwrapCloudResult)
+  const token = uni.getStorageSync('token') || ''
+  if (!token) return Promise.resolve([])
+  return getCloudObject().getOrderList({ ...normalizePageParams(params), token }).then(unwrapCloudResult)
 }
 
 export const getRepairDetail = (id) => {
