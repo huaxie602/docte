@@ -1,6 +1,6 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
-const { ROLE_LABELS, ALL_ROLES } = require('../common/cicada-order-workflow')
+const { ROLE_LABELS, ALL_ROLES } = require('cicada-order-workflow')
 
 const ADMIN_TOKEN_EXPIRE = 8 * 3600 * 1000 // 8小时
 const STAFF_ROLES = ALL_ROLES

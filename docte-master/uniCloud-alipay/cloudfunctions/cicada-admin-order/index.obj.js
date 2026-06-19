@@ -7,7 +7,7 @@ const {
   getWorkflowConfigForRole,
   hasRolePermission,
   isKnownRole
-} = require('../common/cicada-order-workflow')
+} = require('cicada-order-workflow')
 
 async function verifyAdminToken(token) {
   if (!token) throw new Error('鉴权失败：非管理人员禁止访问该接口')
