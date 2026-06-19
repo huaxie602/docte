@@ -1,57 +1,28 @@
+import { unwrapCloudResult, uploadToCloud, withToken } from './cloudHelpers.js'
+import { getCloudTempFileURL, importCloudObject } from '@/utils/cloud.js'
+
 let publicCloudObject = null
 let userCloudObject = null
 let orderCloudObject = null
 
 const getPublicCloudObject = () => {
-	if (!publicCloudObject) publicCloudObject = uniCloud.importObject('cicada-client-public')
+	if (!publicCloudObject) publicCloudObject = importCloudObject('cicada-client-public')
 	return publicCloudObject
 }
 
 const getUserCloudObject = () => {
-	if (!userCloudObject) userCloudObject = uniCloud.importObject('cicada-client-user')
+	if (!userCloudObject) userCloudObject = importCloudObject('cicada-client-user')
 	return userCloudObject
 }
 
 const getOrderCloudObject = () => {
-	if (!orderCloudObject) orderCloudObject = uniCloud.importObject('cicada-client-order')
+	if (!orderCloudObject) orderCloudObject = importCloudObject('cicada-client-order')
 	return orderCloudObject
 }
-
-const unwrapCloudResult = (result = {}) => {
-	if (!result || typeof result !== 'object') return result
-	if (result.code === 0 || result.code === undefined) return result.data === undefined ? result : result.data
-	if ([401, 1004, 100401].includes(Number(result.code))) {
-		uni.removeStorageSync('token')
-		uni.removeStorageSync('userInfo')
-		uni.removeStorageSync('isLoggedIn')
-	}
-	throw new Error(result.message || result.msg || '请求失败')
-}
-
-const withToken = (params = {}) => ({
-	...params,
-	token: uni.getStorageSync('token') || ''
-})
 
 const settingDoc = (title, content = '') => ({
 	title,
 	content: String(content || '').replace(/\n/g, '<br/>')
-})
-
-const getFileExt = (filePath = '', fallback = 'jpg') => {
-	const cleanPath = String(filePath || '').split('?')[0]
-	const match = cleanPath.match(/\.([a-zA-Z0-9]+)$/)
-	return (match ? match[1] : fallback).toLowerCase()
-}
-
-const uploadToCloud = (filePath, dir = 'uploads', fallbackExt = 'jpg') => new Promise((resolve, reject) => {
-	const ext = getFileExt(filePath, fallbackExt)
-	uniCloud.uploadFile({
-		filePath,
-		cloudPath: `${dir}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`,
-		success: (res) => resolve({ url: res.fileID, fileID: res.fileID }),
-		fail: reject
-	})
 })
 
 const normalizeAddress = (data = {}) => ({
@@ -363,7 +334,7 @@ export const getCompliance = async () => {
 		.map(it => it.imageUrl)
 	if (cloudIds.length) {
 		try {
-			const res = await uniCloud.getTempFileURL({ fileList: cloudIds })
+			const res = await getCloudTempFileURL(cloudIds)
 			const map = {}
 			;(res.fileList || []).forEach(item => { if (item && item.fileID) map[item.fileID] = item.tempFileURL })
 			qualifications = qualifications.map(it => (it.type === 'image' && map[it.imageUrl]) ? { ...it, imageUrl: map[it.imageUrl] } : it)

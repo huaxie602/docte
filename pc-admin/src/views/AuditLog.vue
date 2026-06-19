@@ -1,32 +1,43 @@
 <template>
-  <div class="audit-log">
-    <el-card shadow="never" class="filter-card">
-      <el-form :inline="true" :model="filters" @submit.prevent>
-        <el-form-item label="工单号">
-          <el-input v-model="filters.orderNo" placeholder="精确工单号" clearable style="width: 180px" />
-        </el-form-item>
-        <el-form-item label="操作类型">
-          <el-select v-model="filters.action" placeholder="全部" clearable style="width: 160px">
-            <el-option v-for="(label, key) in ACTION_LABELS" :key="key" :label="label" :value="key" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="操作人">
-          <el-input v-model="filters.actorName" placeholder="操作人姓名" clearable style="width: 140px" />
-        </el-form-item>
-        <el-form-item label="时间范围">
-          <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至"
-            start-placeholder="开始时间" end-placeholder="结束时间" value-format="x" style="width: 360px" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleQuery">查询</el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <el-button type="success" plain :loading="exporting" @click="handleExport">导出 Excel</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+  <div class="glass-card audit-log">
+    <div class="section-title">
+      <div>
+        <span>操作审计日志</span>
+        <p class="section-desc">记录工单状态、报价、付款、发票和物流等关键操作，便于追溯责任与合规留痕。</p>
+      </div>
+    </div>
 
-    <el-card shadow="never" class="table-card">
-      <el-table :data="list" v-loading="loading" border stripe size="default">
+    <el-form :inline="true" :model="filters" class="filter-bar" @submit.prevent>
+      <el-form-item label="工单号">
+        <el-input v-model="filters.orderNo" placeholder="精确工单号" clearable style="width: 180px" />
+      </el-form-item>
+      <el-form-item label="操作类型">
+        <el-select v-model="filters.action" placeholder="全部" clearable style="width: 160px">
+          <el-option v-for="(label, key) in ACTION_LABELS" :key="key" :label="label" :value="key" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="操作人">
+        <el-input v-model="filters.actorName" placeholder="操作人姓名" clearable style="width: 140px" />
+      </el-form-item>
+      <el-form-item label="时间范围">
+        <el-date-picker v-model="filters.timeRange" type="datetimerange" range-separator="至"
+          start-placeholder="开始时间" end-placeholder="结束时间" value-format="x" style="width: 360px" />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" @click="handleQuery">查询</el-button>
+        <el-button @click="handleReset">重置</el-button>
+        <el-button type="success" plain :loading="exporting" @click="handleExport">导出 Excel</el-button>
+      </el-form-item>
+    </el-form>
+
+    <div class="table-responsive">
+      <el-table :data="list" v-loading="loading" class="modern-table" style="width:100%;">
+        <template #empty>
+          <div class="table-empty-guide">
+            <strong>暂无审计记录</strong>
+            <span>产生工单、报价、付款或物流操作后，会在这里留下可追溯记录。</span>
+          </div>
+        </template>
         <el-table-column label="操作时间" width="180">
           <template #default="{ row }">{{ formatTime(row.create_time) }}</template>
         </el-table-column>
@@ -49,12 +60,12 @@
           </template>
         </el-table-column>
       </el-table>
+    </div>
       <div class="pager">
         <el-pagination background layout="total, sizes, prev, pager, next" :total="total"
           v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[20, 50, 100]"
           @current-change="loadData" @size-change="handleQuery" />
       </div>
-    </el-card>
 
     <el-dialog v-model="detailVisible" title="操作前后值（合规留痕）" width="640px">
       <div class="detail-block"><h4>变更前 (before)</h4><pre>{{ detailBefore }}</pre></div>

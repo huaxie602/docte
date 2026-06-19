@@ -1,5 +1,11 @@
-<template>
+﻿<template>
   <div class="glass-card">
+    <div class="section-title">
+      <div>
+        <span>系统配置</span>
+        <p class="section-desc">维护保修政策、收费模板、报价套餐、打印配置、教程内容和隐私合规文案。</p>
+      </div>
+    </div>
     <el-tabs v-model="activeContentTab" class="modern-tabs">
       <el-tab-pane label="保修与收费" name="policy">
         <div class="field-title" style="margin-top:20px;">保修政策总述</div>
@@ -27,7 +33,7 @@
           <el-table-column label="保修条款">
             <template #default="{ row }"><el-input v-model="row.terms" type="textarea" :rows="2" placeholder="该机型保修条款说明" /></template>
           </el-table-column>
-          <el-table-column label="操作" width="80" align="right">
+          <el-table-column label="操作" width="80" align="right" fixed="right">
             <template #default="{ $index }"><el-button type="danger" link @click="warrantyRules.splice($index, 1)">删除</el-button></template>
           </el-table-column>
         </el-table>
@@ -67,7 +73,7 @@
           <el-table-column label="备注">
             <template #default="{ row }"><el-input v-model="row.note" placeholder="选填说明" /></template>
           </el-table-column>
-          <el-table-column label="操作" width="80" align="right">
+          <el-table-column label="操作" width="80" align="right" fixed="right">
             <template #default="{ $index }"><el-button type="danger" link @click="feeTiers.splice($index, 1)">删除</el-button></template>
           </el-table-column>
         </el-table>
@@ -84,10 +90,57 @@
           <el-table-column label="备注内容">
             <template #default="{ row }"><el-input v-model="row.content" type="textarea" :rows="2" placeholder="报价单备注文本" /></template>
           </el-table-column>
-          <el-table-column label="操作" width="80" align="right">
+          <el-table-column label="操作" width="80" align="right" fixed="right">
             <template #default="{ $index }"><el-button type="danger" link @click="quoteTemplates.splice($index, 1)">删除</el-button></template>
           </el-table-column>
         </el-table>
+
+        <div class="qual-head">
+          <span>报价套餐模板</span>
+          <el-button type="primary" link @click="addQuotePackage">+ 新增套餐</el-button>
+        </div>
+        <div v-if="!quotePackages.length" class="empty-tip">预设常用检修套餐，报价弹窗可一键带出服务费、其他费用和客户可见备注。</div>
+        <div v-for="(pkg, pkgIndex) in quotePackages" v-else :key="pkg.localId" class="package-card">
+          <div class="package-head">
+            <el-input v-model="pkg.name" placeholder="套餐名称，如 牙科手机整机检修套餐" />
+            <el-input v-model="pkg.category" placeholder="适用分类/机型" />
+            <el-button type="danger" link @click="quotePackages.splice(pkgIndex, 1)">删除套餐</el-button>
+          </div>
+          <el-table :data="pkg.services" class="modern-table package-table" size="small">
+            <el-table-column label="服务项目">
+              <template #default="{ row }"><el-input v-model="row.name" placeholder="如 整机检测费" /></template>
+            </el-table-column>
+            <el-table-column label="分类" width="150">
+              <template #default="{ row }"><el-input v-model="row.productCategory" placeholder="产品分类" /></template>
+            </el-table-column>
+            <el-table-column label="单价" width="130">
+              <template #default="{ row }"><el-input-number v-model="row.unitPrice" :min="0" :step="10" controls-position="right" style="width:100%;" /></template>
+            </el-table-column>
+            <el-table-column label="数量" width="110">
+              <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :step="1" :precision="0" controls-position="right" style="width:100%;" /></template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="right" fixed="right">
+              <template #default="{ $index }"><el-button type="danger" link @click="pkg.services.splice($index, 1)">删除</el-button></template>
+            </el-table-column>
+          </el-table>
+          <el-button type="primary" link @click="pkg.services.push(createPackageService())">+ 服务项目</el-button>
+          <el-table :data="pkg.others" class="modern-table package-table" size="small">
+            <el-table-column label="其他费用">
+              <template #default="{ row }"><el-input v-model="row.name" placeholder="如 清洁保养费 / 加急处理费" /></template>
+            </el-table-column>
+            <el-table-column label="单价" width="130">
+              <template #default="{ row }"><el-input-number v-model="row.unitPrice" :min="0" :step="10" controls-position="right" style="width:100%;" /></template>
+            </el-table-column>
+            <el-table-column label="数量" width="110">
+              <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :step="1" :precision="0" controls-position="right" style="width:100%;" /></template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="right" fixed="right">
+              <template #default="{ $index }"><el-button type="danger" link @click="pkg.others.splice($index, 1)">删除</el-button></template>
+            </el-table-column>
+          </el-table>
+          <el-button type="primary" link @click="pkg.others.push(createPackageOther())">+ 其他费用</el-button>
+          <el-input v-model="pkg.remark" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="套餐备注，套用后追加到报价备注" />
+        </div>
 
         <div class="save-row"><el-button type="primary" :loading="savingPolicy" @click="saveConfig">保存配置</el-button></div>
       </el-tab-pane>
@@ -195,7 +248,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="updatedAt" label="更新时间" width="110"></el-table-column>
-            <el-table-column label="操作" width="240" align="right">
+            <el-table-column label="操作" width="240" align="right" fixed="right">
               <template #default="{row}">
                 <el-button type="primary" link @click="openContentDialog(row)">编辑图文</el-button>
                 <el-button type="primary" link @click="openUploadDialog(row)">上传文档</el-button>
@@ -408,6 +461,7 @@ const warrantyRules = ref([])
 const extended = reactive({ desc: '', fee: '', rules: '' })
 const quoteTemplates = ref([])
 const feeTiers = ref([])
+const quotePackages = ref([])
 
 const parseJsonArray = (value) => {
   try {
@@ -421,6 +475,16 @@ const parseJsonArray = (value) => {
 const addWarrantyRule = () => warrantyRules.value.push({ category: '', model: '', warrantyPeriod: '', terms: '' })
 const addQuoteTemplate = () => quoteTemplates.value.push({ title: '', content: '' })
 const addFeeTier = () => feeTiers.value.push({ name: '', price: 0, unit: '次', note: '' })
+const createPackageService = () => ({ name: '', productCategory: '', unitPrice: 0, quantity: 1, remark: '' })
+const createPackageOther = () => ({ name: '', unitPrice: 0, quantity: 1, remark: '' })
+const addQuotePackage = () => quotePackages.value.push({
+  localId: `pkg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  name: '',
+  category: '',
+  services: [createPackageService()],
+  others: [],
+  remark: ''
+})
 const guideDefaults = [
   { type: 'quick', category: '快速指南', desc: '跳转到图文并茂的快速入门文档，帮助用户快速了解小程序售后流程。', sort: 1 },
   { type: 'repair', category: '报修指南', desc: '跳转到图文并茂的报修文档，说明报修流程、寄出注意事项和进度查询方式。', sort: 2 },
@@ -446,6 +510,14 @@ const loadSettings = async () => {
     warrantyRules.value = parseJsonArray(data.warranty_rules)
     quoteTemplates.value = parseJsonArray(data.quote_remark_templates)
     feeTiers.value = parseJsonArray(data.fee_tier_templates)
+    quotePackages.value = parseJsonArray(data.quote_package_templates).map((pkg) => ({
+      localId: pkg.localId || `pkg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: pkg.name || '',
+      category: pkg.category || '',
+      services: Array.isArray(pkg.services) ? pkg.services : [],
+      others: Array.isArray(pkg.others) ? pkg.others : [],
+      remark: pkg.remark || ''
+    }))
     extended.desc = data.extended_warranty_desc || ''
     extended.fee = data.extended_warranty_fee || ''
     extended.rules = data.extended_warranty_rules || ''
@@ -463,6 +535,26 @@ const saveConfig = async () => {
     const cleanWarrantyRules = warrantyRules.value.filter(r => r.category || r.model || r.warrantyPeriod || r.terms)
     const cleanQuoteTemplates = quoteTemplates.value.filter(t => t.title || t.content)
     const cleanFeeTiers = feeTiers.value.filter(t => t.name || t.price)
+    const cleanQuotePackages = quotePackages.value
+      .map(pkg => ({
+        name: pkg.name || '',
+        category: pkg.category || '',
+        services: (pkg.services || []).filter(row => row.name || row.unitPrice).map(row => ({
+          name: row.name || '',
+          productCategory: row.productCategory || '',
+          unitPrice: Number(row.unitPrice || 0),
+          quantity: Number(row.quantity || 1) || 1,
+          remark: row.remark || ''
+        })),
+        others: (pkg.others || []).filter(row => row.name || row.unitPrice).map(row => ({
+          name: row.name || '',
+          unitPrice: Number(row.unitPrice || 0),
+          quantity: Number(row.quantity || 1) || 1,
+          remark: row.remark || ''
+        })),
+        remark: pkg.remark || ''
+      }))
+      .filter(pkg => pkg.name || pkg.services.length || pkg.others.length || pkg.remark)
     await saveSettings(token, {
       warranty_policy: config.warranty,
       fee_description: config.feePolicy,
@@ -471,7 +563,8 @@ const saveConfig = async () => {
       extended_warranty_fee: extended.fee,
       extended_warranty_rules: extended.rules,
       quote_remark_templates: JSON.stringify(cleanQuoteTemplates),
-      fee_tier_templates: JSON.stringify(cleanFeeTiers)
+      fee_tier_templates: JSON.stringify(cleanFeeTiers),
+      quote_package_templates: JSON.stringify(cleanQuotePackages)
     })
     ElMessage.success('配置保存成功')
   } catch (error) {
@@ -816,6 +909,9 @@ onMounted(() => {
 .empty-file { color: #c9cdd4; }
 .qual-head { display:flex; justify-content:space-between; align-items:center; font-weight:600; margin:24px 0 12px; }
 .empty-tip { color:#86909c; font-size:13px; background:#f7f8fa; border-radius:8px; padding:16px; }
+.package-card { border:1px solid #e5eefb; border-radius:8px; padding:14px; margin-bottom:12px; background:#fbfdff; }
+.package-head { display:grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) auto; gap:10px; align-items:center; margin-bottom:10px; }
+.package-table { margin:8px 0; }
 .qual-card { border:1px solid #f0f2f5; border-radius:10px; padding:16px; margin-bottom:12px; }
 .qual-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
 .qual-img-row { display:flex; align-items:center; gap:12px; }
@@ -834,3 +930,4 @@ onMounted(() => {
 .modern-tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; background-color: #f0f2f5; }
 .modern-tabs :deep(.el-tabs__item) { font-size: 15px; padding: 0 20px; }
 </style>
+

@@ -1,14 +1,27 @@
 <template>
   <div class="glass-card">
     <div class="section-title">
-      <span>用户管理</span>
-      <el-button type="primary" size="small" @click="openUserDialog(null)">
-        <el-icon><Plus /></el-icon> 新增用户
-      </el-button>
+      <div>
+        <span>用户管理</span>
+        <p class="section-desc">管理后台账号、角色权限、负责品类和工程师服务范围。</p>
+      </div>
+      <div class="title-actions">
+        <el-button type="primary" size="small" @click="openUserDialog(null)">
+          <el-icon><Plus /></el-icon> 新增用户
+        </el-button>
+      </div>
     </div>
     <div class="table-responsive">
       <el-table :data="users" class="modern-table" style="width:100%;" v-loading="loading">
-        <el-table-column prop="name" label="姓名" width="120"></el-table-column>
+        <template #empty>
+          <div class="table-empty-guide">
+            <strong>暂无后台用户</strong>
+            <span>点击“新增用户”创建管理员、工程师、财务或客服账号。</span>
+          </div>
+        </template>
+        <el-table-column prop="name" label="姓名" width="120">
+          <template #default="{ row }"><span class="cell-primary">{{ row.name || '-' }}</span></template>
+        </el-table-column>
         <el-table-column prop="username" label="账号" width="140"></el-table-column>
         <el-table-column prop="phone" label="手机号" width="150"></el-table-column>
         <el-table-column prop="roleDisplay" label="角色" show-overflow-tooltip></el-table-column>
@@ -30,12 +43,14 @@
         <el-table-column label="操作" width="230" fixed="right" align="right">
           <template #default="{row}">
             <el-button type="primary" link @click="openUserDialog(row)">编辑</el-button>
-            <el-button type="danger" link :disabled="row.username === 'admin_root'" @click="confirmResetPassword(row)">重置密码</el-button>
-            <el-popconfirm v-if="!isCurrentUser(row)" title="确定要禁用该账号吗？" @confirm="deleteUser(row._id)">
-              <template #reference>
-                <el-button type="danger" link :disabled="row.username === 'admin_root'">禁用</el-button>
-              </template>
-            </el-popconfirm>
+            <span class="risk-actions">
+              <el-button type="danger" link :disabled="row.username === 'admin_root'" @click="confirmResetPassword(row)">重置密码</el-button>
+              <el-popconfirm v-if="!isCurrentUser(row)" title="确定要禁用该账号吗？" @confirm="deleteUser(row._id)">
+                <template #reference>
+                  <el-button type="danger" link :disabled="row.username === 'admin_root'">禁用</el-button>
+                </template>
+              </el-popconfirm>
+            </span>
           </template>
         </el-table-column>
       </el-table>

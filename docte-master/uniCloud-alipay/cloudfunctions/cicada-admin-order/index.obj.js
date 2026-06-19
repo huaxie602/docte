@@ -1,5 +1,119 @@
 const db = uniCloud.database()
 const dbCmd = db.command
+
+function createWorkflowFallback() {
+  const ORDER_STATUS = ['pending', 'sent', 'received', 'inspecting', 'fixing', 'shipped', 'completed', 'cancelled']
+  const ORDER_STATUS_LABELS = {
+    pending: '已提交',
+    sent: '运输中',
+    received: '已签收',
+    inspecting: '检测中',
+    fixing: '处理中',
+    shipped: '已回寄',
+    completed: '已完成',
+    cancelled: '已取消'
+  }
+  const ORDER_STATUS_TRANSITIONS = {
+    pending: ['sent', 'received', 'cancelled'],
+    sent: ['received', 'cancelled'],
+    received: ['inspecting', 'fixing', 'cancelled'],
+    inspecting: ['fixing', 'shipped', 'cancelled'],
+    fixing: ['shipped', 'completed', 'cancelled'],
+    shipped: ['completed'],
+    completed: [],
+    cancelled: []
+  }
+  const ROLE_LABELS = {
+    superadmin: '超级管理员',
+    admin: '管理员',
+    engineer: '工程师',
+    finance: '财务',
+    support: '客服'
+  }
+  const ALL_ROLES = Object.keys(ROLE_LABELS)
+  const PERMISSIONS = {
+    view_order: ALL_ROLES,
+    export_order: ALL_ROLES,
+    get_stats: ALL_ROLES,
+    get_workflow_config: ALL_ROLES,
+    update_status: ['admin', 'engineer'],
+    import_logistics: ['admin', 'engineer'],
+    issue_quote: ['admin', 'support'],
+    confirm_payment: ['admin', 'finance'],
+    update_invoice: ['admin', 'finance'],
+    view_payment_proof: ['admin', 'finance'],
+    manage_inventory: ['admin', 'engineer'],
+    view_settlement: ['admin', 'finance'],
+    update_remarks: ['admin', 'engineer', 'support'],
+    add_timeline: ['admin', 'engineer', 'support'],
+    manage_staff: ['admin'],
+    manage_settings: ['admin'],
+    manage_kb: ['admin', 'engineer'],
+    view_audit_log: ['admin', 'finance']
+  }
+  const normalizeRole = role => String(role || '').trim()
+  const isKnownRole = role => ALL_ROLES.includes(normalizeRole(role))
+  const getRoleLabel = role => ROLE_LABELS[normalizeRole(role)] || normalizeRole(role) || '未知角色'
+  const hasRolePermission = (role = '', action = '') => {
+    const normalizedRole = normalizeRole(role)
+    if (normalizedRole === 'superadmin' || normalizedRole === 'admin') return true
+    return (PERMISSIONS[action] || []).includes(normalizedRole)
+  }
+  const assertRolePermission = (user = {}, action = '') => {
+    const role = normalizeRole(user.role)
+    if (!hasRolePermission(role, action)) throw new Error(`${getRoleLabel(role)}无权限执行该操作`)
+    return true
+  }
+  const isKnownOrderStatus = status => ORDER_STATUS.includes(String(status || '').trim())
+  const getOrderStatusLabel = status => ORDER_STATUS_LABELS[String(status || '').trim()] || String(status || '').trim() || '未知状态'
+  const getAllowedStatusTransitions = status => ORDER_STATUS_TRANSITIONS[String(status || '').trim()] || []
+  const canTransitionOrderStatus = (fromStatus = '', toStatus = '') => {
+    const from = String(fromStatus || '').trim()
+    const to = String(toStatus || '').trim()
+    if (!isKnownOrderStatus(from) || !isKnownOrderStatus(to)) return false
+    return from === to || getAllowedStatusTransitions(from).includes(to)
+  }
+  const assertOrderStatusTransition = (fromStatus = '', toStatus = '') => {
+    const from = String(fromStatus || '').trim()
+    const to = String(toStatus || '').trim()
+    if (!isKnownOrderStatus(to)) throw new Error('工单状态不正确')
+    if (!isKnownOrderStatus(from)) throw new Error('当前工单状态不正确')
+    if (!canTransitionOrderStatus(from, to)) throw new Error(`${getOrderStatusLabel(from)}工单不能改为${getOrderStatusLabel(to)}`)
+    return true
+  }
+  const getWorkflowConfigForRole = (role = '') => {
+    const normalizedRole = normalizeRole(role)
+    return {
+      role: normalizedRole,
+      roleLabel: getRoleLabel(normalizedRole),
+      roles: ALL_ROLES.map(item => ({ role: item, label: ROLE_LABELS[item] })),
+      statuses: ORDER_STATUS.map(status => ({ status, label: ORDER_STATUS_LABELS[status] })),
+      transitions: ORDER_STATUS_TRANSITIONS,
+      permissions: Object.fromEntries(Object.keys(PERMISSIONS).map(action => [action, hasRolePermission(normalizedRole, action)]))
+    }
+  }
+  return {
+    ORDER_STATUS,
+    assertOrderStatusTransition,
+    assertRolePermission,
+    getWorkflowConfigForRole,
+    hasRolePermission,
+    isKnownRole
+  }
+}
+
+function loadWorkflowModule() {
+  try {
+    return require('cicada-order-workflow')
+  } catch (error) {
+    try {
+      return require('../common/cicada-order-workflow')
+    } catch (localError) {
+      return createWorkflowFallback()
+    }
+  }
+}
+
 const {
   ORDER_STATUS,
   assertOrderStatusTransition,
@@ -7,7 +121,7 @@ const {
   getWorkflowConfigForRole,
   hasRolePermission,
   isKnownRole
-} = require('../common/cicada-order-workflow')
+} = loadWorkflowModule()
 
 async function verifyAdminToken(token) {
   if (!token) throw new Error('鉴权失败：非管理人员禁止访问该接口')
@@ -512,6 +626,7 @@ async function findOrderByNo(orderNo) {
 const INVOICE_STATUS = ['无需开票', '待开票', '开具中', '已开具']
 const QUOTE_STATUS = ['pending', 'draft', 'issued', 'confirmed', 'rejected']
 const PAYMENT_STATUS = ['pending', 'uploaded', 'paid']
+const DEFAULT_PAYMENT_DEADLINE_DAYS = 7
 
 function normalizeInvoiceStatusValue(status = '') {
   const value = normalizeText(status)
@@ -538,28 +653,327 @@ function normalizeQuoteItems(items) {
   }).filter(item => item.name || item.desc || item.parts_fee > 0 || item.labor_fee > 0)
 }
 
+function normalizeQuoteAmount(value) {
+  return Math.max(Number(value || 0) || 0, 0)
+}
+
+function normalizeQuoteDetailRows(rows, type = 'services') {
+  if (!Array.isArray(rows)) return []
+  return rows.map((item = {}) => {
+    const unitPrice = normalizeQuoteAmount(item.unitPrice ?? item.unit_price ?? item.price ?? item.projectPrice ?? item.project_price ?? item.sale_price)
+    const quantity = Math.max(Number(item.quantity ?? item.qty ?? item.count ?? 1) || 1, 0)
+    const amount = normalizeQuoteAmount(item.amount ?? item.total ?? unitPrice * quantity)
+    const base = {
+      name: normalizeText(item.name || item.title || item.projectName || item.project_name || item.part_name),
+      unit_price: unitPrice,
+      quantity,
+      amount,
+      remark: normalizeText(item.remark || item.desc || item.description)
+    }
+    if (type === 'parts') {
+      return {
+        ...base,
+        part_id: normalizeText(item.part_id || item.partId || item._id),
+        part_code: normalizeText(item.part_code || item.partCode || item.code || item.no),
+        model: normalizeText(item.model || item.part_model || item.partModel),
+        name: base.name || '配件费用'
+      }
+    }
+    if (type === 'services') {
+      return {
+        ...base,
+        service_id: normalizeText(item.service_id || item.serviceId || item._id),
+        product_category: normalizeText(item.product_category || item.productCategory || item.category),
+        name: base.name || '服务费用'
+      }
+    }
+    return {
+      ...base,
+      name: base.name || '其他费用'
+    }
+  }).filter(item => item.name || item.amount > 0)
+}
+
+function sumQuoteRows(rows = []) {
+  return rows.reduce((sum, item) => sum + normalizeQuoteAmount(item.amount), 0)
+}
+
+function buildQuoteDetailFromLegacy(quoteItems = [], remark = '') {
+  const parts = []
+  const services = []
+  quoteItems.forEach((item = {}) => {
+    if (normalizeQuoteAmount(item.parts_fee) > 0) {
+      parts.push({
+        name: item.name || '配件费用',
+        model: '',
+        unit_price: normalizeQuoteAmount(item.parts_fee),
+        quantity: 1,
+        amount: normalizeQuoteAmount(item.parts_fee),
+        remark: item.desc || ''
+      })
+    }
+    if (normalizeQuoteAmount(item.labor_fee) > 0) {
+      services.push({
+        name: item.name || '服务费用',
+        product_category: '',
+        unit_price: normalizeQuoteAmount(item.labor_fee),
+        quantity: 1,
+        amount: normalizeQuoteAmount(item.labor_fee),
+        remark: item.desc || ''
+      })
+    }
+  })
+  const partsTotal = sumQuoteRows(parts)
+  const servicesTotal = sumQuoteRows(services)
+  const others = []
+  const othersTotal = 0
+  const autoTotal = partsTotal + servicesTotal + othersTotal
+  return {
+    parts,
+    services,
+    others,
+    parts_total: partsTotal,
+    services_total: servicesTotal,
+    others_total: othersTotal,
+    auto_total: autoTotal,
+    final_price: autoTotal,
+    remark
+  }
+}
+
+function normalizeQuoteDetail(quote = {}, quoteItems = []) {
+  const source = quote.quote_detail || quote.quoteDetail || quote
+  const remark = normalizeText(quote.remark || quote.quote_remark || quote.quoteRemark || source.remark)
+  const hasStructuredRows = Array.isArray(source.parts) || Array.isArray(source.services) || Array.isArray(source.others)
+  if (!hasStructuredRows) return buildQuoteDetailFromLegacy(quoteItems, remark)
+
+  const parts = normalizeQuoteDetailRows(source.parts, 'parts')
+  const services = normalizeQuoteDetailRows(source.services, 'services')
+  const others = normalizeQuoteDetailRows(source.others, 'others')
+  const partsTotal = sumQuoteRows(parts)
+  const servicesTotal = sumQuoteRows(services)
+  const othersTotal = sumQuoteRows(others)
+  const autoTotal = partsTotal + servicesTotal + othersTotal
+  const finalPrice = normalizeQuoteAmount(source.final_price ?? source.finalPrice ?? quote.final_price ?? quote.finalPrice ?? autoTotal)
+  return {
+    parts,
+    services,
+    others,
+    parts_total: partsTotal,
+    services_total: servicesTotal,
+    others_total: othersTotal,
+    auto_total: autoTotal,
+    final_price: finalPrice,
+    remark
+  }
+}
+
+function buildLegacyQuoteItemsFromDetail(detail = {}, fallbackItems = []) {
+  const items = []
+  ;(detail.parts || []).forEach(item => {
+    items.push({
+      name: item.name || '配件费用',
+      desc: item.remark || [item.part_code, item.model].filter(Boolean).join(' / '),
+      parts_fee: normalizeQuoteAmount(item.amount),
+      labor_fee: 0
+    })
+  })
+  ;(detail.services || []).forEach(item => {
+    items.push({
+      name: item.name || '服务费用',
+      desc: item.remark || item.product_category || '',
+      parts_fee: 0,
+      labor_fee: normalizeQuoteAmount(item.amount)
+    })
+  })
+  ;(detail.others || []).forEach(item => {
+    items.push({
+      name: item.name || '其他费用',
+      desc: item.remark || '',
+      parts_fee: 0,
+      labor_fee: normalizeQuoteAmount(item.amount)
+    })
+  })
+  return items.length ? items : fallbackItems
+}
+
+function normalizePartInput(part = {}) {
+  return {
+    part_code: normalizeText(part.part_code || part.partCode || part.code),
+    part_name: normalizeText(part.part_name || part.partName || part.name),
+    model: normalizeText(part.model || part.part_model || part.partModel),
+    compatible_models: Array.isArray(part.compatible_models)
+      ? part.compatible_models.map(normalizeText).filter(Boolean)
+      : normalizeText(part.compatibleModels || part.compatible_models).split(/[,，\n]/).map(normalizeText).filter(Boolean),
+    purchase_cost: normalizeQuoteAmount(part.purchase_cost ?? part.purchaseCost),
+    sale_price: normalizeQuoteAmount(part.sale_price ?? part.salePrice ?? part.unit_price ?? part.unitPrice),
+    stock: Math.max(Number(part.stock ?? 0) || 0, 0),
+    warning_threshold: Math.max(Number(part.warning_threshold ?? part.warningThreshold ?? 0) || 0, 0),
+    enabled: part.enabled === undefined ? true : Boolean(part.enabled),
+    remark: normalizeText(part.remark)
+  }
+}
+
+function mapPartForClient(part = {}) {
+  const stock = Number(part.stock || 0) || 0
+  const warningThreshold = Number(part.warning_threshold || 0) || 0
+  return {
+    ...part,
+    partCode: part.part_code || '',
+    partName: part.part_name || '',
+    compatibleModels: part.compatible_models || [],
+    purchaseCost: Number(part.purchase_cost || 0),
+    salePrice: Number(part.sale_price || 0),
+    warningThreshold,
+    lowStock: warningThreshold > 0 && stock <= warningThreshold
+  }
+}
+
+function getQuoteInventoryLines(order = {}) {
+  const detail = order.quote_detail || order.quoteDetail || {}
+  const parts = Array.isArray(detail.parts) ? detail.parts : []
+  const merged = new Map()
+  parts.forEach((item = {}) => {
+    const partId = normalizeText(item.part_id || item.partId)
+    const partCode = normalizeText(item.part_code || item.partCode)
+    if (!partId && !partCode) return
+    const key = partId || `code:${partCode}`
+    const prev = merged.get(key) || {
+      part_id: partId,
+      part_code: partCode,
+      part_name: normalizeText(item.name || item.part_name || item.partName),
+      model: normalizeText(item.model),
+      quantity: 0
+    }
+    prev.quantity += Math.max(Number(item.quantity || 0) || 0, 0)
+    merged.set(key, prev)
+  })
+  return [...merged.values()].filter(item => item.quantity > 0)
+}
+
+async function findInventoryPart(line = {}) {
+  if (line.part_id) {
+    const res = await db.collection('cicada_parts').doc(line.part_id).get()
+    if (res.data && res.data[0]) return res.data[0]
+  }
+  if (line.part_code) {
+    const res = await db.collection('cicada_parts')
+      .where({ part_code: line.part_code })
+      .limit(1)
+      .get()
+    if (res.data && res.data[0]) return res.data[0]
+  }
+  return null
+}
+
+async function outboundOrderInventory(order = {}, actor = {}, now = Date.now(), { required = false } = {}) {
+  if (order.inventory_deducted) {
+    return { skipped: true, reason: '该工单已完成配件出库', flows: [] }
+  }
+  const lines = getQuoteInventoryLines(order)
+  if (!lines.length) {
+    return { skipped: true, reason: '报价未绑定库存配件', flows: [] }
+  }
+
+  const resolved = []
+  for (const line of lines) {
+    const part = await findInventoryPart(line)
+    if (!part || part.enabled === false) {
+      throw new Error(`配件 ${line.part_code || line.part_name || line.part_id} 不存在或已禁用`)
+    }
+    const stock = Number(part.stock || 0) || 0
+    if (stock < line.quantity) {
+      throw new Error(`配件 ${part.part_name || part.part_code} 库存不足，当前 ${stock}，需 ${line.quantity}`)
+    }
+    resolved.push({ line, part })
+  }
+
+  const flows = []
+  for (const { line, part } of resolved) {
+    const beforeStock = Number(part.stock || 0) || 0
+    const afterStock = beforeStock - line.quantity
+    await db.collection('cicada_parts').doc(part._id).update({
+      stock: afterStock,
+      update_time: now
+    })
+    const flow = {
+      part_id: part._id,
+      part_code: part.part_code || line.part_code || '',
+      part_name: part.part_name || line.part_name || '',
+      order_id: order._id || '',
+      order_no: order.order_no || '',
+      flow_type: 'outbound',
+      quantity: line.quantity,
+      before_stock: beforeStock,
+      after_stock: afterStock,
+      operator_id: actor._id || '',
+      operator_name: actor.name || actor.username || '',
+      remark: '工单维修领用出库',
+      create_time: now
+    }
+    const addRes = await db.collection('cicada_inventory_flows').add(flow)
+    flows.push({ ...flow, _id: addRes.id })
+  }
+
+  await db.collection('cicada_orders').doc(order._id).update({
+    inventory_deducted: true,
+    inventory_deduct_time: now,
+    inventory_status: 'outbound',
+    update_time: now
+  })
+
+  await logOrderEvent({
+    order,
+    action: 'inventory_outbound',
+    actor,
+    before: { inventory_deducted: Boolean(order.inventory_deducted) },
+    after: { inventory_deducted: true, flows: flows.map(item => ({ part_code: item.part_code, quantity: item.quantity })) }
+  })
+
+  return { skipped: false, flows }
+}
+
 function buildQuoteData(quote = {}, now) {
   const status = normalizeText(quote.status || quote.quote_status || quote.quoteStatus || 'draft') || 'draft'
   if (!QUOTE_STATUS.includes(status)) {
     throw new Error('报价状态不正确')
   }
 
-  const quoteItems = normalizeQuoteItems(quote.items || quote.quote_items || quote.quoteItems)
-  const partsFee = quoteItems.reduce((sum, item) => sum + item.parts_fee, 0)
-  const laborFee = quoteItems.reduce((sum, item) => sum + item.labor_fee, 0)
-  const totalPrice = partsFee + laborFee
+  const legacyItems = normalizeQuoteItems(quote.items || quote.quote_items || quote.quoteItems)
+  const quoteDetail = normalizeQuoteDetail(quote, legacyItems)
+  const quoteItems = buildLegacyQuoteItemsFromDetail(quoteDetail, legacyItems)
+  const partsFee = normalizeQuoteAmount(quoteDetail.parts_total)
+  const laborFee = normalizeQuoteAmount(quoteDetail.services_total) + normalizeQuoteAmount(quoteDetail.others_total)
+  const totalPrice = normalizeQuoteAmount(quoteDetail.final_price)
+  const autoTotal = normalizeQuoteAmount(quoteDetail.auto_total)
+  const quoteRemark = normalizeText(quoteDetail.remark || quote.remark || quote.quote_remark || quote.quoteRemark)
 
-  if ((status === 'draft' || status === 'issued') && (!quoteItems.length || totalPrice <= 0)) {
+  if (quoteRemark.length > 200) {
+    throw new Error('报价备注不能超过200字')
+  }
+
+  if ((status === 'draft' || status === 'issued') && (!quoteItems.length || totalPrice <= 0 || autoTotal <= 0)) {
     throw new Error('请填写有效报价项目和金额')
   }
 
+  // 维修质保期（月），随报价发给客户，0 表示沿用全局质保政策
+  const warrantyMonths = Math.max(0, parseInt(
+    quote.quote_warranty_months ?? quote.warranty_months ?? quote.warrantyMonths ?? 0, 10
+  ) || 0)
+
   return {
     quote_items: quoteItems,
+    quote_detail: {
+      ...quoteDetail,
+      final_price: totalPrice,
+      remark: quoteRemark
+    },
     parts_fee: partsFee,
     labor_fee: laborFee,
     total_price: totalPrice,
     quote_status: status,
-    quote_remark: normalizeText(quote.remark || quote.quote_remark || quote.quoteRemark),
+    quote_remark: quoteRemark,
+    quote_warranty_months: warrantyMonths,
     quote_update_time: now,
     update_time: now
   }
@@ -975,6 +1389,150 @@ module.exports = {
       }, currentAdmin)
 
       return { code: 0, data: orderData }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async listParts(params) {
+    try {
+      requireAdminPermission(this, 'manage_inventory')
+      const { keyword = '', stockStatus = '', enabled, page = 1, pageSize = 20 } = pickParam(this, params)
+      const pagination = normalizePage(page, pageSize)
+      const normalizedKeyword = normalizeText(keyword).toLowerCase()
+      const allRes = await db.collection('cicada_parts').orderBy('create_time', 'desc').limit(1000).get()
+      let list = (allRes.data || []).filter(part => {
+        const searchable = [
+          part.part_code,
+          part.part_name,
+          part.model,
+          ...(Array.isArray(part.compatible_models) ? part.compatible_models : [])
+        ].filter(Boolean).join(' ').toLowerCase()
+        const stock = Number(part.stock || 0) || 0
+        const warning = Number(part.warning_threshold || 0) || 0
+        return (!normalizedKeyword || searchable.includes(normalizedKeyword)) &&
+          (enabled === undefined || enabled === '' || Boolean(part.enabled) === Boolean(enabled)) &&
+          (!stockStatus || (stockStatus === 'low' ? warning > 0 && stock <= warning : stockStatus === 'out' ? stock <= 0 : true))
+      })
+      const total = list.length
+      const start = (pagination.page - 1) * pagination.pageSize
+      list = list.slice(start, start + pagination.pageSize).map(mapPartForClient)
+      return { code: 0, data: { list, total, page: pagination.page, pageSize: pagination.pageSize } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async savePart(params) {
+    try {
+      const currentAdmin = requireAdminPermission(this, 'manage_inventory')
+      const { part = {} } = pickParam(this, params)
+      const data = normalizePartInput(part)
+      if (!data.part_code) return { code: -1, msg: '缺少配件编码' }
+      if (!data.part_name) return { code: -1, msg: '缺少配件名称' }
+      const now = Date.now()
+      const partId = normalizeText(part._id || part.part_id || part.partId)
+
+      if (partId) {
+        const oldRes = await db.collection('cicada_parts').doc(partId).get()
+        const oldPart = oldRes.data && oldRes.data[0]
+        if (!oldPart) return { code: -1, msg: '配件不存在' }
+        const updateData = { ...data, update_time: now }
+        await db.collection('cicada_parts').doc(partId).update(updateData)
+        if (Number(oldPart.stock || 0) !== Number(data.stock || 0)) {
+          await db.collection('cicada_inventory_flows').add({
+            part_id: partId,
+            part_code: data.part_code,
+            part_name: data.part_name,
+            flow_type: 'adjust',
+            quantity: Number(data.stock || 0) - Number(oldPart.stock || 0),
+            before_stock: Number(oldPart.stock || 0),
+            after_stock: Number(data.stock || 0),
+            operator_id: currentAdmin._id || '',
+            operator_name: currentAdmin.name || currentAdmin.username || '',
+            remark: '后台编辑库存',
+            create_time: now
+          })
+        }
+        return { code: 0, data: { _id: partId, ...updateData } }
+      }
+
+      const dup = await db.collection('cicada_parts').where({ part_code: data.part_code }).limit(1).get()
+      if (dup.data && dup.data.length) return { code: -1, msg: '配件编码已存在' }
+      const createData = {
+        ...data,
+        create_time: now,
+        update_time: now
+      }
+      const addRes = await db.collection('cicada_parts').add(createData)
+      if (data.stock > 0) {
+        await db.collection('cicada_inventory_flows').add({
+          part_id: addRes.id,
+          part_code: data.part_code,
+          part_name: data.part_name,
+          flow_type: 'inbound',
+          quantity: data.stock,
+          before_stock: 0,
+          after_stock: data.stock,
+          operator_id: currentAdmin._id || '',
+          operator_name: currentAdmin.name || currentAdmin.username || '',
+          remark: '初始入库',
+          create_time: now
+        })
+      }
+      return { code: 0, data: { _id: addRes.id, ...createData } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async updatePartStatus(params) {
+    try {
+      requireAdminPermission(this, 'manage_inventory')
+      const { part_id, enabled } = pickParam(this, params)
+      if (!part_id) return { code: -1, msg: '缺少配件ID' }
+      const updateData = { enabled: Boolean(enabled), update_time: Date.now() }
+      const res = await db.collection('cicada_parts').doc(part_id).update(updateData)
+      if (!res.updated) return { code: -1, msg: '配件不存在' }
+      return { code: 0, data: updateData }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async listInventoryFlows(params) {
+    try {
+      requireAdminPermission(this, 'manage_inventory')
+      const { part_id = '', order_id = '', page = 1, pageSize = 20 } = pickParam(this, params)
+      const pagination = normalizePage(page, pageSize)
+      const matchCond = {}
+      if (part_id) matchCond.part_id = part_id
+      if (order_id) matchCond.order_id = order_id
+      const [countRes, listRes] = await Promise.all([
+        db.collection('cicada_inventory_flows').where(matchCond).count(),
+        db.collection('cicada_inventory_flows')
+          .where(matchCond)
+          .orderBy('create_time', 'desc')
+          .skip((pagination.page - 1) * pagination.pageSize)
+          .limit(pagination.pageSize)
+          .get()
+      ])
+      return { code: 0, data: { list: listRes.data || [], total: countRes.total || 0, page: pagination.page, pageSize: pagination.pageSize } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async useOrderParts(params) {
+    try {
+      const currentAdmin = requireAdminPermission(this, 'manage_inventory')
+      const { order_id } = pickParam(this, params)
+      if (!order_id) return { code: -1, msg: '缺少工单ID' }
+      const found = await db.collection('cicada_orders').doc(order_id).get()
+      const order = found.data && found.data[0]
+      if (!order) return { code: -1, msg: '工单不存在' }
+      const result = await outboundOrderInventory(order, currentAdmin, Date.now(), { required: true })
+      return { code: 0, data: result }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
@@ -1498,6 +2056,10 @@ module.exports = {
       }
 
       if (quoteData.quote_status === 'issued') {
+        // 付款截止时间：优先用后台传入的绝对时间，其次按天数，否则默认 7 天
+        const days = Math.max(1, parseInt(quote.payment_deadline_days ?? quote.paymentDeadlineDays ?? DEFAULT_PAYMENT_DEADLINE_DAYS, 10) || DEFAULT_PAYMENT_DEADLINE_DAYS)
+        const absoluteDeadline = parseInt(quote.payment_deadline ?? quote.paymentDeadline ?? 0, 10) || 0
+        updateData.payment_deadline = absoluteDeadline > now ? absoluteDeadline : (now + days * 24 * 3600 * 1000)
         updateData.timeline = [
           ...timeline,
           {
@@ -1518,11 +2080,13 @@ module.exports = {
         before: {
           quote_status: order.quote_status || 'pending',
           quote_items: order.quote_items || [],
+          quote_detail: order.quote_detail || null,
           total_price: Number(order.total_price || 0)
         },
         after: {
           quote_status: quoteData.quote_status,
           quote_items: quoteData.quote_items,
+          quote_detail: quoteData.quote_detail,
           total_price: quoteData.total_price
         }
       })
@@ -1549,6 +2113,11 @@ module.exports = {
       const found = await db.collection('cicada_orders').doc(order_id).get()
       const order = found.data && found.data[0]
       if (!order) return { code: -1, msg: '工单不存在' }
+
+      let inventoryResult = null
+      if (paymentStatus === 'paid' && order.payment_status !== 'paid') {
+        inventoryResult = await outboundOrderInventory(order, currentAdmin, now)
+      }
 
       const updateData = {
         payment_status: paymentStatus,
@@ -1586,7 +2155,63 @@ module.exports = {
       if (paymentStatus === 'paid' && order.payment_status !== 'paid') {
         await sendOrderSubscription({ ...order, ...updateData }, 'payment_confirmed', '付款已确认')
       }
-      return { code: 0, data: updateData }
+      return { code: 0, data: { ...updateData, inventoryResult } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  async getSettlementList(params) {
+    try {
+      const currentAdmin = requireAdminPermission(this, 'view_settlement')
+      const { paymentStatus = '', keyword = '', page = 1, pageSize = 20 } = pickParam(this, params)
+      const pagination = normalizePage(page, pageSize)
+      const normalizedKeyword = normalizeText(keyword).toLowerCase()
+      const matchCond = {
+        total_price: dbCmd.gt(0),
+        quote_status: dbCmd.in(['issued', 'confirmed', 'rejected'])
+      }
+      if (paymentStatus) matchCond.payment_status = paymentStatus
+      const fallback = await fetchOrderBatches(matchCond, { maxRows: ADMIN_ORDER_FILTER_SCAN_LIMIT, returnMeta: true })
+      const enriched = await Promise.all((fallback.orders || []).map(async order => stripPaymentProofsIfForbidden(await enrichPaymentProofs(order), currentAdmin)))
+      const filtered = enriched.filter(order => {
+        const shipBack = order.ship_back_info || {}
+        const searchable = [
+          order.order_no,
+          order._id,
+          shipBack.name,
+          shipBack.phone,
+          shipBack.unit
+        ].filter(Boolean).join(' ').toLowerCase()
+        return !normalizedKeyword || searchable.includes(normalizedKeyword)
+      })
+      const start = (pagination.page - 1) * pagination.pageSize
+      const list = filtered.slice(start, start + pagination.pageSize).map(order => ({
+        _id: order._id,
+        order_no: order.order_no,
+        customer_name: (order.ship_back_info && (order.ship_back_info.unit || order.ship_back_info.name)) || '',
+        contact_phone: (order.ship_back_info && order.ship_back_info.phone) || '',
+        quote_status: order.quote_status || 'pending',
+        payment_status: order.payment_status || 'pending',
+        payment_proofs: order.payment_proofs || [],
+        total_price: Number(order.total_price || 0),
+        parts_fee: Number(order.parts_fee || 0),
+        labor_fee: Number(order.labor_fee || 0),
+        invoice_info: order.invoice_info || {},
+        inventory_deducted: Boolean(order.inventory_deducted),
+        create_time: order.create_time || 0,
+        update_time: order.update_time || 0
+      }))
+      return {
+        code: 0,
+        data: {
+          list,
+          total: filtered.length,
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          truncated: fallback.truncated
+        }
+      }
     } catch (e) {
       return { code: -1, msg: e.message }
     }

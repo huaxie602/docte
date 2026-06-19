@@ -1,7 +1,10 @@
 <template>
   <div class="glass-card">
     <div class="section-title">
-      <span>客户管理</span>
+      <div>
+        <span>客户管理</span>
+        <p class="section-desc">维护诊所、经销商和散户档案，统一查看客户资产、历史工单和服务标签。</p>
+      </div>
       <div class="title-actions">
         <el-button v-if="canEdit" size="small" @click="tagMgrVisible = true">标签管理</el-button>
         <el-button v-if="canCreate" size="small" @click="importVisible = true">批量导入</el-button>
@@ -42,10 +45,16 @@
 
     <div class="table-responsive">
       <el-table :data="list" class="modern-table" style="width:100%;" v-loading="loading" @selection-change="onSelectionChange">
+        <template #empty>
+          <div class="table-empty-guide">
+            <strong>暂无客户数据</strong>
+            <span>可以先新增线下客户，或通过“批量导入 / 同步小程序客户”建立客户档案。</span>
+          </div>
+        </template>
         <el-table-column type="selection" width="44" :selectable="(row) => row.status !== 'cancelled'" />
         <el-table-column prop="name" label="客户名称" min-width="150" show-overflow-tooltip>
           <template #default="{row}">
-            <span>{{ row.name }}</span>
+            <span class="cell-primary">{{ row.name }}</span>
             <el-tag v-if="row.status === 'cancelled'" size="small" type="info" effect="plain" style="margin-left:6px;">已注销</el-tag>
           </template>
         </el-table-column>
@@ -162,21 +171,37 @@
         </el-descriptions>
       </el-tab-pane>
 
-      <el-tab-pane label="名下设备" name="device">
+      <el-tab-pane label="客户资产/SN台账" name="device">
+        <div class="asset-summary">
+          <div><span>设备总数</span><b>{{ assetSummary.total }}</b></div>
+          <div><span>在保/延保</span><b>{{ assetSummary.covered }}</b></div>
+          <div><span>过保设备</span><b>{{ assetSummary.expired }}</b></div>
+          <div><span>SN 完整率</span><b>{{ assetSummary.snRate }}%</b></div>
+        </div>
         <div class="tab-toolbar" v-if="canDevice && detail.status !== 'cancelled'">
           <el-button type="primary" size="small" @click="openDevice(null)"><el-icon><Plus /></el-icon> 绑定设备</el-button>
         </div>
         <el-table :data="devices" v-loading="tabLoading" size="small">
-          <el-table-column prop="product_name" label="设备名称" min-width="120" />
+          <el-table-column prop="product_category" label="分类" width="110" show-overflow-tooltip />
+          <el-table-column prop="product_name" label="设备名称" min-width="120" show-overflow-tooltip />
           <el-table-column prop="model" label="型号" width="120" />
           <el-table-column prop="sn" label="SN序列号" min-width="140" />
+          <el-table-column prop="purchase_channel" label="采购渠道" width="110" show-overflow-tooltip />
+          <el-table-column prop="dealer_name" label="销售方" width="120" show-overflow-tooltip />
           <el-table-column prop="buy_date" label="采购日期" width="110" />
+          <el-table-column label="质保月数" width="90">
+            <template #default="{row}">{{ row.warranty_months ? `${row.warranty_months}个月` : '-' }}</template>
+          </el-table-column>
           <el-table-column label="质保到期" width="120">
             <template #default="{row}"><span :class="{ 'text-danger': row.warranty_state === 'expired' }">{{ row.effective_expire || '-' }}</span></template>
           </el-table-column>
           <el-table-column label="质保状态" width="90">
             <template #default="{row}"><el-tag size="small" :type="warrantyTag(row.warranty_state)">{{ warrantyLabel(row.warranty_state) }}</el-tag></template>
           </el-table-column>
+          <el-table-column label="延保" width="70" align="center">
+            <template #default="{row}">{{ Array.isArray(row.ext_warranty) ? row.ext_warranty.length : 0 }}</template>
+          </el-table-column>
+          <el-table-column prop="maintenance_cycle" label="保养周期" width="110" show-overflow-tooltip />
           <el-table-column v-if="canDevice" label="操作" width="120" align="right">
             <template #default="{row}">
               <el-button type="primary" link size="small" @click="openDevice(row)">编辑</el-button>
@@ -217,11 +242,16 @@
   <!-- 设备绑定弹窗 -->
   <el-dialog v-model="deviceVisible" :title="deviceForm._id ? '编辑设备' : '绑定设备'" width="460px" align-center>
     <el-form :model="deviceForm" label-width="100px">
+      <el-form-item label="产品分类"><el-input v-model.trim="deviceForm.product_category" placeholder="如 牙科手机 / 种植机" /></el-form-item>
       <el-form-item label="设备名称" required><el-input v-model.trim="deviceForm.product_name" /></el-form-item>
       <el-form-item label="型号"><el-input v-model.trim="deviceForm.model" /></el-form-item>
       <el-form-item label="SN序列号"><el-input v-model.trim="deviceForm.sn" placeholder="机身唯一序列号" /></el-form-item>
+      <el-form-item label="采购渠道"><el-input v-model.trim="deviceForm.purchase_channel" placeholder="厂家 / 经销商 / 线下导入" /></el-form-item>
+      <el-form-item label="销售方"><el-input v-model.trim="deviceForm.dealer_name" placeholder="经销商或来源单位" /></el-form-item>
       <el-form-item label="采购日期"><el-date-picker v-model="deviceForm.buy_date" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></el-form-item>
+      <el-form-item label="质保月数"><el-input-number v-model="deviceForm.warranty_months" :min="0" :precision="0" controls-position="right" style="width:100%;" /></el-form-item>
       <el-form-item label="质保到期"><el-date-picker v-model="deviceForm.warranty_expire" type="date" value-format="YYYY-MM-DD" style="width:100%;" /></el-form-item>
+      <el-form-item label="保养周期"><el-input v-model.trim="deviceForm.maintenance_cycle" placeholder="如 6个月 / 12个月" /></el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="deviceVisible = false">取消</el-button>
@@ -452,6 +482,18 @@ const detail = reactive({})
 const devices = ref([])
 const orderData = reactive({ list: [], total: 0, total_amount: 0 })
 const logs = ref([])
+const assetSummary = computed(() => {
+  const total = devices.value.length
+  const covered = devices.value.filter(d => ['in_warranty', 'extended'].includes(d.warranty_state)).length
+  const expired = devices.value.filter(d => d.warranty_state === 'expired').length
+  const snCount = devices.value.filter(d => d.sn).length
+  return {
+    total,
+    covered,
+    expired,
+    snRate: total ? Math.round((snCount / total) * 100) : 0
+  }
+})
 
 const openDetail = async (row) => {
   activeTab.value = 'base'
@@ -477,15 +519,20 @@ const loadLogs = async () => { tabLoading.value = true; try { logs.value = await
 
 // ===== 设备弹窗 =====
 const deviceVisible = ref(false)
-const deviceForm = reactive({ _id: null, product_name: '', model: '', sn: '', buy_date: '', warranty_expire: '' })
+const deviceForm = reactive({ _id: null, product_category: '', product_name: '', model: '', sn: '', purchase_channel: '', dealer_name: '', buy_date: '', warranty_months: 0, warranty_expire: '', maintenance_cycle: '' })
 const openDevice = (row) => {
   Object.assign(deviceForm, {
     _id: row ? row._id : null,
+    product_category: row ? (row.product_category || '') : '',
     product_name: row ? row.product_name : '',
     model: row ? (row.model || '') : '',
     sn: row ? (row.sn || '') : '',
+    purchase_channel: row ? (row.purchase_channel || '') : '',
+    dealer_name: row ? (row.dealer_name || '') : '',
     buy_date: row ? (row.buy_date || '') : '',
-    warranty_expire: row ? (row.warranty_expire || '') : ''
+    warranty_months: row ? (Number(row.warranty_months || 0) || 0) : 0,
+    warranty_expire: row ? (row.warranty_expire || '') : '',
+    maintenance_cycle: row ? (row.maintenance_cycle || '') : ''
   })
   deviceVisible.value = true
 }
@@ -591,6 +638,10 @@ onMounted(() => { load(); loadDealers(); loadTags() })
 .modern-table :deep(td.el-table__cell) { border-bottom: 1px solid #f0f2f5; padding: 12px 0; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .tab-toolbar { margin-bottom: 12px; }
+.asset-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.asset-summary div { padding: 10px 12px; border: 1px solid #e5eefb; border-radius: 8px; background: #f7fbff; }
+.asset-summary span { display: block; color: #86909c; font-size: 12px; margin-bottom: 4px; }
+.asset-summary b { color: #1d2129; font-size: 18px; }
 .order-summary { margin-bottom: 12px; color: #4e5969; }
 .order-summary b { color: #f56c6c; }
 .text-danger { color: #f56c6c; font-weight: 600; }

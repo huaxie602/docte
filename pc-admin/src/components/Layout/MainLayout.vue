@@ -12,12 +12,13 @@
       <el-menu :default-active="activeMenu" class="el-menu-vertical" @select="handleMenuSelect">
         <el-menu-item v-if="canAccessMenu('home')" index="home"><el-icon><HomeFilled /></el-icon><span>工作台首页</span></el-menu-item>
         <el-menu-item v-if="canAccessMenu('workorder')" index="workorder"><el-icon><Document /></el-icon><span>报修工单管理</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('settlement')" index="settlement"><el-icon><Money /></el-icon><span>结算管理</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('inventory')" index="inventory"><el-icon><Box /></el-icon><span>配件库存管理</span></el-menu-item>
         <el-menu-item v-if="canAccessMenu('customers')" index="customers"><el-icon><Avatar /></el-icon><span>客户管理</span></el-menu-item>
         <el-menu-item v-if="canAccessMenu('faultdb')" index="faultdb"><el-icon><Warning /></el-icon><span>产品故障知识库</span></el-menu-item>
-        <el-menu-item v-if="canAccessMenu('users')" index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
         <el-menu-item v-if="canAccessMenu('feedback')" index="feedback"><el-icon><ChatDotSquare /></el-icon><span>投诉与建议</span></el-menu-item>
-        <el-menu-item v-if="canAccessMenu('summary')" index="summary"><el-icon><DataAnalysis /></el-icon><span>运营汇总看板</span></el-menu-item>
         <el-menu-item v-if="canAccessMenu('audit')" index="audit"><el-icon><Tickets /></el-icon><span>操作审计日志</span></el-menu-item>
+        <el-menu-item v-if="canAccessMenu('users')" index="users"><el-icon><User /></el-icon><span>用户管理</span></el-menu-item>
         <el-menu-item v-if="canAccessMenu('settings')" index="settings"><el-icon><Setting /></el-icon><span>小程序配置</span></el-menu-item>
       </el-menu>
       <div class="sidebar-footer">
@@ -107,6 +108,8 @@ const sidebarOpen = ref(false)
 const menuTitles = {
   home: '工作台首页',
   workorder: '报修工单处理中心',
+  inventory: '配件库存管理',
+  settlement: '结算管理',
   faultdb: '产品分类与故障预设',
   users: '用户管理',
   settings: '小程序图文及政策配置',
@@ -256,6 +259,7 @@ onUnmounted(() => { window.removeEventListener('resize', checkMobile) })
   position: relative;
   z-index: 1;
   padding: 22px 22px 18px;
+  flex-shrink: 0;
 }
 .logo-card {
   height: 74px;
@@ -276,15 +280,32 @@ onUnmounted(() => { window.removeEventListener('resize', checkMobile) })
   font-size: 10px;
   line-height: 1;
   font-weight: 600;
+  flex-shrink: 0;
 }
 .el-menu-vertical {
   position: relative;
   z-index: 1;
   border-right: none;
-  padding: 0 22px;
+  padding: 0 22px 10px;
   background: transparent;
   display: grid;
   gap: 7px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.el-menu-vertical::-webkit-scrollbar {
+  width: 6px;
+}
+.el-menu-vertical::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.52);
+}
+.el-menu-vertical::-webkit-scrollbar-track {
+  background: transparent;
 }
 :deep(.el-menu-item) {
   height: 60px;
@@ -347,6 +368,7 @@ onUnmounted(() => { window.removeEventListener('resize', checkMobile) })
   z-index: 1;
   margin-top: auto;
   padding: 18px 22px 24px;
+  flex-shrink: 0;
 }
 .status-card {
   padding: 20px;

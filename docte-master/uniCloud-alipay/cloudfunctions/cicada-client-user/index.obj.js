@@ -1,8 +1,6 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
 
-const WX_APPID = process.env.WX_APPID
-const WX_SECRET = process.env.WX_SECRET
 const TOKEN_EXPIRE = 7 * 24 * 3600 * 1000 // 7天
 
 const RATE_LIMITS = {
@@ -14,13 +12,29 @@ function genToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
+function getEnvValue(...names) {
+  for (const name of names) {
+    const value = process.env[name]
+    if (value) return String(value).trim()
+  }
+  return ''
+}
+
+function getWechatAppConfig() {
+  return {
+    appId: getEnvValue('WX_APPID', 'WECHAT_APPID'),
+    secret: getEnvValue('WX_SECRET', 'WECHAT_SECRET')
+  }
+}
+
 async function getAccessToken() {
-  if (!WX_APPID || !WX_SECRET) {
+  const { appId, secret } = getWechatAppConfig()
+  if (!appId || !secret) {
     throw new Error('请先配置微信小程序 WX_APPID 和 WX_SECRET')
   }
 
   const res = await uniCloud.httpclient.request(
-    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${WX_APPID}&secret=${WX_SECRET}`,
+    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(secret)}`,
     { dataType: 'json' }
   )
   return res.data.access_token
@@ -216,14 +230,15 @@ module.exports = {
 
   async login({ code, phoneCode }) {
     try {
-      if (!WX_APPID || !WX_SECRET) {
+      const { appId, secret } = getWechatAppConfig()
+      if (!appId || !secret) {
         return { code: -1, message: '请先配置微信小程序 WX_APPID 和 WX_SECRET' }
       }
       await checkRateLimit('login', `${getClientIdentity(this)}:${code || 'empty'}`)
 
       // 1. 换取 openid
       const wxRes = await uniCloud.httpclient.request(
-        `https://api.weixin.qq.com/sns/jscode2session?appid=${WX_APPID}&secret=${WX_SECRET}&js_code=${code}&grant_type=authorization_code`,
+        `https://api.weixin.qq.com/sns/jscode2session?appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(secret)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`,
         { dataType: 'json' }
       )
       const { openid, errmsg } = wxRes.data
@@ -242,7 +257,8 @@ module.exports = {
             params: { access_token: await getAccessToken() }
           }
         )
-        phone = phoneRes.data?.phone_info?.phoneNumber || ''
+        const phoneInfo = phoneRes.data && phoneRes.data.phone_info
+        phone = (phoneInfo && phoneInfo.phoneNumber) || ''
       }
 
       const col = db.collection('cicada_users')
@@ -434,6 +450,16 @@ module.exports = {
         db.collection('cicada_feedbacks').where(where).count()
       ])
 
+      // 后台中文状态 → 小程序展示状态键（与「我的反馈单」标签一致）
+      const STATUS_KEY_MAP = {
+        '待处理': 'submitted',
+        '处理中': 'processing',
+        '已升级': 'processing',
+        '已回复': 'replied',
+        '已结案': 'closed',
+        '已处理': 'closed'
+      }
+
       return {
         code: 0,
         data: {
@@ -446,7 +472,9 @@ module.exports = {
             contactType: item.contact_type || '',
             contact: item.contact_value || '',
             orderId: item.rel_order_no || '',
-            status: item.status,
+            status: STATUS_KEY_MAP[item.status] || 'submitted',
+            statusLabel: item.status || '待处理',
+            reply: item.reply || '',
             createTime: item.create_time
           })),
           total: countRes.total,

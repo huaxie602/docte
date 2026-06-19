@@ -66,9 +66,39 @@ export const getFeedbackStats = (token) => {
   return request.post(`${API_BASE.adminSys}/getFeedbackStats`, { token })
 }
 
-// 获取反馈列表
-export const getFeedbackList = (token, status) => {
-  return request.post(`${API_BASE.adminSys}/getFeedbackList`, { token, status })
+// 获取反馈列表（支持状态/类型/紧急度/关键词筛选 + 分页）
+export const getFeedbackList = (token, params = {}) => {
+  return request.post(`${API_BASE.adminSys}/getFeedbackList`, { token, ...params })
+}
+
+// 分配负责人
+export const assignFeedback = (token, id, handlerId) => {
+  return request.post(`${API_BASE.adminSys}/assignFeedback`, { token, id, handler_id: handlerId })
+}
+
+// 设置紧急等级
+export const setFeedbackUrgency = (token, id, urgency) => {
+  return request.post(`${API_BASE.adminSys}/setFeedbackUrgency`, { token, id, urgency })
+}
+
+// 处理记录 + 官方回复（回复对客户可见）
+export const replyFeedback = (token, payload = {}) => {
+  return request.post(`${API_BASE.adminSys}/replyFeedback`, { token, ...payload })
+}
+
+// 回访登记
+export const recordFeedbackVisit = (token, payload = {}) => {
+  return request.post(`${API_BASE.adminSys}/recordFeedbackVisit`, { token, ...payload })
+}
+
+// 结案（需先完成回访）
+export const closeFeedback = (token, id) => {
+  return request.post(`${API_BASE.adminSys}/closeFeedback`, { token, id })
+}
+
+// 升级投诉
+export const upgradeFeedback = (token, id, note) => {
+  return request.post(`${API_BASE.adminSys}/upgradeFeedback`, { token, id, note })
 }
 
 // 保存配置

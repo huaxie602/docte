@@ -40,9 +40,13 @@ npm run build # outputs to dist/
 
 Cloud functions live in `docte-master/uniCloud-alipay/cloudfunctions/`, organized by domain. They use the `index.obj.js` "cloud object" style (`module.exports = { async methodName(data) {...} }`).
 
-**Client-facing**: `cicada-client-user` (auth/profile), `cicada-client-order` (order create/track), `cicada-client-public` (guides, fault KB).
+**Client-facing**: `cicada-client-user` (auth/profile; also `submitFeedback` — the mini-program 投诉/建议 entry, writes `cicada_feedbacks`), `cicada-client-order` (order create/track), `cicada-client-public` (guides, fault KB).
 
-**Admin** (URL 化, called by pc-admin over HTTP): `cicada-admin-sys` (login, staff management, settings), `cicada-admin-order` (order list/assign/status), `cicada-admin-kb` (fault KB + categories), `cicada-admin-customer` (customer CRM: profiles, devices, history, tags, import/export, compliance logs).
+**Admin** (URL 化, called by pc-admin over HTTP): `cicada-admin-sys`, `cicada-admin-order`, `cicada-admin-kb`, `cicada-admin-customer`. **Important: these functions have grown well beyond their names — match the PC Admin api file to the cloud function by its `API_BASE` key, not by the view name:**
+- `cicada-admin-sys` (`adminSys`): login, staff management, settings, **and the feedback (投诉/建议) closed-loop**: `getFeedbackStats`/`getFeedbackList` (DB-side paginated + status/type/urgency/keyword filters, resolves customer name/phone) plus `assignFeedback`/`setFeedbackUrgency`/`replyFeedback`/`recordFeedbackVisit`/`closeFeedback`/`upgradeFeedback`. `closeFeedback` requires a recorded 回访. Each processing action writes an audit entry to `cicada_order_events` (`action: feedback_*`). RBAC via `PERMISSIONS.view_feedback`/`handle_feedback` (in `cicada-order-workflow`). Backs `pc-admin/src/api/admin.js`. The mini program submits via `cicada-client-user.submitFeedback` and reads status/reply via `getComplaintList` (status mapped to the page's `submitted/processing/replied/closed` keys).
+- `cicada-admin-order` (`adminOrder`): order list/assign/status **plus parts, inventory, and settlement** — `listParts`/`savePart`/`updatePartStatus`/`listInventoryFlows`/`useOrderParts`/`getSettlementList`. Backs `order.js`, `inventory.js`, and `settlement.js`. There is **no** separate inventory/settlement cloud function.
+- `cicada-admin-kb` (`adminKb`): fault KB + categories. Backs `kb.js`.
+- `cicada-admin-customer` (`adminCustomer`): customer CRM (profiles, devices, history, tags, import/export, compliance logs). Backs `customer.js`, `audit.js`, `performance.js`.
 
 **Maintenance**: `cicada-maintenance` (background cleanup; call `run({ token, dryRun: true })`).
 
@@ -65,7 +69,8 @@ Permissions are gated by the `PERMISSIONS` map in `cicada-order-workflow`, e.g. 
 
 Core: `cicada_users` (client + staff, `role` field), `cicada_orders`, `cicada_order_items`, `cicada_order_events` (order timeline/audit), `cicada_user_devices`, `cicada_addresses`.
 CRM: `cicada_customers`, `cicada_customer_logs` (compliance/access log), `cicada_customer_tags`.
-Content/system: `cicada_fault_kb`, `cicada_product_categories`, `cicada_guides`, `cicada_feedbacks`, `cicada_settings`, `cicada_subscription_logs`, `cicada_rate_limits` (API rate limiting).
+Inventory/billing: `cicada_parts` (parts/配件 catalog), `cicada_inventory_flows` (stock movement log).
+Content/system: `cicada_fault_kb`, `cicada_product_categories`, `cicada_guides`, `cicada_feedbacks` (投诉/建议: `type` enum `投诉`/`建议`, `status` enum `待处理`/`已处理`, optional `rel_order_no` linking to an order), `cicada_settings`, `cicada_subscription_logs`, `cicada_rate_limits` (API rate limiting).
 
 Schemas: `docte-master/uniCloud-alipay/database/*.schema.json`. Init/test data: `*.init_data.json`, `test-*.json` (import per `导入测试数据说明.md`).
 
@@ -86,7 +91,7 @@ Schemas: `docte-master/uniCloud-alipay/database/*.schema.json`. Init/test data: 
 - **Error codes**: `code: 0` (or `code: 0`/`code: -1` per function) = success/failure convention; `code: 401` = unauthorized.
 - **Mini-program navigation**: all pages use `navigationStyle: "custom"`.
 - **Mini-program API layer** (`api/*.js`): wraps cloud calls; `USE_CLOUD` toggle switches between `callCloudFunction()` and HTTP fallback.
-- **WeChat AppID**: `wxb764380b85d5b475` (manifest.json). uniCloud provider: Alipay Cloud (`uniCloud-alipay`).
+- **WeChat AppID**: `wx25289fbe4a3bf011` (manifest.json). uniCloud provider: Alipay Cloud (`uniCloud-alipay`).
 
 ### Adding things
 
@@ -98,3 +103,17 @@ Schemas: `docte-master/uniCloud-alipay/database/*.schema.json`. Init/test data: 
 ## Reference Docs
 
 `goal.md` / `DEPLOY_GOAL.md` (product/deploy goals), `SCALING_GUIDE.md` (~1000-user capacity tuning), `后端对接任务清单.md` (backend integration checklist), `docte-master/uniCloud-alipay/database/MAINTENANCE.md`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in GitHub Issues on `origin` (`huaxie602/docte`), via the `gh` CLI. External PRs are **not** a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults — `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

@@ -1,6 +1,14 @@
 const db = uniCloud.database()
 const crypto = require('crypto')
-const { ROLE_LABELS, ALL_ROLES } = require('../common/cicada-order-workflow')
+const { ROLE_LABELS, ALL_ROLES, PERMISSIONS } = loadWorkflowModule()
+
+function loadWorkflowModule() {
+  try {
+    return require('cicada-order-workflow')
+  } catch (packageError) {
+    return require('../common/cicada-order-workflow')
+  }
+}
 
 const ADMIN_TOKEN_EXPIRE = 8 * 3600 * 1000 // 8小时
 const STAFF_ROLES = ALL_ROLES
@@ -68,6 +76,46 @@ function pickFields(source = {}, fields = []) {
     }
     return result
   }, {})
+}
+
+function fbText(value, max = 1000) {
+  return String(value == null ? '' : value).trim().slice(0, max)
+}
+
+function fbPage(page, pageSize) {
+  const p = Math.max(1, parseInt(page, 10) || 1)
+  const size = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 10))
+  return { page: p, pageSize: size }
+}
+
+// 复用 cicada_order_events 记录投诉处理审计（医疗器械合规备查）
+async function writeFeedbackEvent(actor, feedback, action, before, after) {
+  try {
+    await db.collection('cicada_order_events').add({
+      order_id: feedback._id,
+      order_no: feedback.rel_order_no || `FB-${feedback._id}`,
+      source: 'admin',
+      action,
+      actor_id: actor._id,
+      actor_role: actor.role,
+      actor_name: actor.name || actor.nickname || actor.username || '',
+      before: before || {},
+      after: after || {},
+      create_time: Date.now()
+    })
+  } catch (e) {
+    // 审计写入失败不阻断主流程
+    console.warn('writeFeedbackEvent failed:', e.message)
+  }
+}
+
+async function loadFeedback(id) {
+  const feedbackId = fbText(id, 60)
+  if (!feedbackId) throw new Error('缺少反馈ID')
+  const res = await db.collection('cicada_feedbacks').doc(feedbackId).get()
+  const feedback = res.data && res.data[0]
+  if (!feedback) throw new Error('反馈不存在')
+  return feedback
 }
 
 function buildPasswordFields(password) {
@@ -225,6 +273,48 @@ function verifyPassword(user, password) {
 
   // 兼容历史明文密码账号，登录成功后会迁移为哈希存储。
   return user.password === password
+}
+
+function getRequestData(ctx, params) {
+  if (params && Object.keys(params).length) return params
+  if (ctx && ctx.params && Object.keys(ctx.params).length) return ctx.params
+  const httpInfo = ctx && ctx.getHttpInfo && ctx.getHttpInfo()
+  if (httpInfo && httpInfo.body) {
+    try {
+      return JSON.parse(httpInfo.body)
+    } catch (e) {
+      return {}
+    }
+  }
+  return {}
+}
+
+async function uploadAdminFile(ctx, params, defaultDir = 'guides/') {
+  const data = getRequestData(ctx, params)
+  const { token, fileContent, fileName, fileType, dir } = data
+  await verifyAdminToken(token, ['admin'])
+
+  if (!fileContent || !fileName) return { code: -1, msg: '缺少文件内容或文件名' }
+
+  const buffer = Buffer.from(fileContent, 'base64')
+  const safeFileName = String(fileName).replace(/[\\/:*?"<>|]/g, '_')
+  const safeDir = String(dir || defaultDir).replace(/[^a-zA-Z0-9_\-/]/g, '').replace(/\/+$/, '') || 'guides'
+  const cloudPath = `${safeDir}/${Date.now()}_${safeFileName}`
+  const res = await uniCloud.uploadFile({
+    cloudPath,
+    fileContent: buffer,
+    fileType: fileType || 'application/octet-stream'
+  })
+
+  let tempUrl = ''
+  try {
+    const t = await uniCloud.getTempFileURL({ fileList: [res.fileID] })
+    tempUrl = (t.fileList && t.fileList[0] && t.fileList[0].tempFileURL) || ''
+  } catch (err) {
+    tempUrl = ''
+  }
+
+  return { code: 0, data: { fileUrl: res.fileID, tempUrl } }
 }
 
 module.exports = {
@@ -446,15 +536,18 @@ module.exports = {
 
   async getFeedbackStats(params) {
     try {
-      let token
-      if (params && params.token) {
-        ({ token } = params)
-      } else if (this.params) {
-        ({ token } = this.params)
-      }
-      await verifyAdminToken(token, ['admin', 'engineer'])
-      const res = await db.collection('cicada_feedbacks').where({ status: '待处理' }).count()
-      return { code: 0, data: { unreadCount: res.total } }
+      const { token } = getRequestData(this, params)
+      await verifyAdminToken(token, PERMISSIONS.view_feedback)
+      const dbCmd = db.command
+      // 待处理 / 处理中 视为未结案待跟进
+      const [pendingRes, highRiskRes] = await Promise.all([
+        db.collection('cicada_feedbacks').where({ status: dbCmd.in(['待处理', '处理中']) }).count(),
+        db.collection('cicada_feedbacks').where({
+          urgency: '高危',
+          status: dbCmd.in(['待处理', '处理中', '已回复', '已升级'])
+        }).count()
+      ])
+      return { code: 0, data: { unreadCount: pendingRes.total, highRiskCount: highRiskRes.total } }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
@@ -462,25 +555,225 @@ module.exports = {
 
   async getFeedbackList(params) {
     try {
-      let token, status
-      if (params && params.token) {
-        ({ token, status } = params)
-      } else if (this.params) {
-        ({ token, status } = this.params)
+      const { token, status, type, urgency, keyword, page, pageSize } = getRequestData(this, params)
+      await verifyAdminToken(token, PERMISSIONS.view_feedback)
+      const dbCmd = db.command
+      const { page: pageNum, pageSize: limit } = fbPage(page, pageSize)
+
+      const base = {}
+      if (status && status !== '全部') base.status = status
+      if (type && type !== '全部') base.type = type
+      if (urgency && urgency !== '全部') base.urgency = urgency
+      const kw = fbText(keyword, 60)
+      let query = base
+      if (kw) {
+        const reg = new db.RegExp({ regexp: kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options: 'i' })
+        // 关键词匹配反馈内容 / 关联工单号 / 联系方式
+        const orCond = dbCmd.or([
+          { content: reg },
+          { rel_order_no: reg },
+          { contact_value: reg }
+        ])
+        query = Object.keys(base).length ? dbCmd.and([base, orCond]) : orCond
       }
-      await verifyAdminToken(token, ['admin', 'engineer'])
 
-      const where = {}
-      if (status && status !== '全部') {
-        where.status = status
+      const col = db.collection('cicada_feedbacks')
+      const [listRes, countRes] = await Promise.all([
+        col.where(query).orderBy('create_time', 'desc')
+          .skip((pageNum - 1) * limit).limit(limit).get(),
+        col.where(query).count()
+      ])
+
+      // 批量解析客户姓名/手机
+      const userIds = [...new Set(listRes.data.map(i => i.user_id).filter(Boolean))]
+      const userMap = {}
+      if (userIds.length) {
+        const usersRes = await db.collection('cicada_users')
+          .where({ _id: dbCmd.in(userIds) })
+          .field({ name: true, nickname: true, phone: true })
+          .get()
+        usersRes.data.forEach(u => { userMap[u._id] = u })
       }
 
-      const res = await db.collection('cicada_feedbacks')
-        .where(where)
-        .orderBy('create_time', 'desc')
-        .get()
+      const list = listRes.data.map(item => {
+        const u = userMap[item.user_id] || {}
+        return {
+          _id: item._id,
+          type: item.type,
+          content: item.content,
+          images: item.images || [],
+          contact_type: item.contact_type || '',
+          contact_value: item.contact_value || '',
+          rel_order_no: item.rel_order_no || '',
+          status: item.status || '待处理',
+          urgency: item.urgency || '普通',
+          handler_id: item.handler_id || '',
+          handler_name: item.handler_name || '',
+          reply: item.reply || '',
+          process_result: item.process_result || '',
+          process_note: item.process_note || '',
+          visit_time: item.visit_time || 0,
+          visit_by: item.visit_by || '',
+          visit_satisfaction: item.visit_satisfaction || '',
+          visit_opinion: item.visit_opinion || '',
+          upgrade_note: item.upgrade_note || '',
+          create_time: item.create_time || 0,
+          handled_time: item.handled_time || 0,
+          update_time: item.update_time || 0,
+          customerName: u.name || u.nickname || '',
+          customerPhone: u.phone || ''
+        }
+      })
 
-      return { code: 0, data: res.data }
+      return { code: 0, data: { list, total: countRes.total, page: pageNum, pageSize: limit } }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 分配负责人
+  async assignFeedback(params) {
+    try {
+      const { token, id, handler_id } = getRequestData(this, params)
+      const operator = await verifyAdminToken(token, PERMISSIONS.handle_feedback)
+      const feedback = await loadFeedback(id)
+
+      let handlerName = ''
+      const targetId = fbText(handler_id, 60)
+      if (targetId) {
+        const staffRes = await db.collection('cicada_users').doc(targetId).get()
+        const staff = staffRes.data && staffRes.data[0]
+        if (!staff || !STAFF_ROLES.includes(staff.role)) return { code: -1, msg: '负责人不存在' }
+        handlerName = staff.name || staff.nickname || staff.username || ''
+      }
+
+      const update = {
+        handler_id: targetId,
+        handler_name: handlerName,
+        update_time: Date.now()
+      }
+      if (feedback.status === '待处理') update.status = '处理中'
+
+      await db.collection('cicada_feedbacks').doc(feedback._id).update(update)
+      await writeFeedbackEvent(operator, feedback, 'feedback_assign',
+        { handler_id: feedback.handler_id || '', handler_name: feedback.handler_name || '' },
+        { handler_id: targetId, handler_name: handlerName })
+      return { code: 0, msg: '已分配负责人' }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 设置紧急等级
+  async setFeedbackUrgency(params) {
+    try {
+      const { token, id, urgency } = getRequestData(this, params)
+      const operator = await verifyAdminToken(token, PERMISSIONS.handle_feedback)
+      const feedback = await loadFeedback(id)
+      const level = fbText(urgency, 10)
+      if (!['普通', '重要', '高危'].includes(level)) return { code: -1, msg: '紧急等级不正确' }
+      await db.collection('cicada_feedbacks').doc(feedback._id).update({ urgency: level, update_time: Date.now() })
+      return { code: 0, msg: '已更新紧急等级' }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 处理记录 + 官方回复（回复对客户可见）
+  async replyFeedback(params) {
+    try {
+      const { token, id, reply, process_result, process_note, status } = getRequestData(this, params)
+      const operator = await verifyAdminToken(token, PERMISSIONS.handle_feedback)
+      const feedback = await loadFeedback(id)
+
+      const replyText = fbText(reply, 1000)
+      const update = {
+        process_result: fbText(process_result, 200),
+        process_note: fbText(process_note, 1000),
+        update_time: Date.now()
+      }
+      if (replyText) {
+        update.reply = replyText
+        update.status = '已回复'
+      } else {
+        update.status = fbText(status, 10) || '处理中'
+      }
+      if (!feedback.handled_time) update.handled_time = Date.now()
+      // 自动认领（若未分配负责人则记录当前处理人）
+      if (!feedback.handler_id) {
+        update.handler_id = operator._id
+        update.handler_name = operator.name || operator.nickname || operator.username || ''
+      }
+
+      await db.collection('cicada_feedbacks').doc(feedback._id).update(update)
+      await writeFeedbackEvent(operator, feedback, 'feedback_reply',
+        { status: feedback.status, reply: feedback.reply || '' },
+        { status: update.status, reply: update.reply || '' })
+      return { code: 0, msg: '处理记录已保存' }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 回访登记
+  async recordFeedbackVisit(params) {
+    try {
+      const { token, id, satisfaction, opinion } = getRequestData(this, params)
+      const operator = await verifyAdminToken(token, PERMISSIONS.handle_feedback)
+      const feedback = await loadFeedback(id)
+      const level = fbText(satisfaction, 10)
+      if (!['满意', '一般', '不满意'].includes(level)) return { code: -1, msg: '请选择满意度' }
+
+      const update = {
+        visit_time: Date.now(),
+        visit_by: operator.name || operator.nickname || operator.username || '',
+        visit_satisfaction: level,
+        visit_opinion: fbText(opinion, 500),
+        update_time: Date.now()
+      }
+      await db.collection('cicada_feedbacks').doc(feedback._id).update(update)
+      await writeFeedbackEvent(operator, feedback, 'feedback_visit', {}, {
+        visit_satisfaction: level, visit_opinion: update.visit_opinion
+      })
+      return { code: 0, msg: '回访已登记' }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 结案（必须先完成回访）
+  async closeFeedback(params) {
+    try {
+      const { token, id } = getRequestData(this, params)
+      const operator = await verifyAdminToken(token, PERMISSIONS.handle_feedback)
+      const feedback = await loadFeedback(id)
+      if (!feedback.visit_time) return { code: -1, msg: '请先完成回访登记再结案' }
+      if (feedback.status === '已结案') return { code: -1, msg: '该反馈已结案' }
+
+      await db.collection('cicada_feedbacks').doc(feedback._id).update({ status: '已结案', update_time: Date.now() })
+      await writeFeedbackEvent(operator, feedback, 'feedback_close',
+        { status: feedback.status }, { status: '已结案' })
+      return { code: 0, msg: '已结案' }
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
+  },
+
+  // 升级投诉
+  async upgradeFeedback(params) {
+    try {
+      const { token, id, note } = getRequestData(this, params)
+      const operator = await verifyAdminToken(token, PERMISSIONS.handle_feedback)
+      const feedback = await loadFeedback(id)
+
+      await db.collection('cicada_feedbacks').doc(feedback._id).update({
+        status: '已升级',
+        upgrade_note: fbText(note, 500),
+        update_time: Date.now()
+      })
+      await writeFeedbackEvent(operator, feedback, 'feedback_upgrade',
+        { status: feedback.status }, { status: '已升级', upgrade_note: fbText(note, 500) })
+      return { code: 0, msg: '已标记升级投诉' }
     } catch (e) {
       return { code: -1, msg: e.message }
     }
@@ -643,44 +936,17 @@ module.exports = {
   },
 
   async uploadGuideFile(params) {
-    return this.uploadFile(params)
+    try {
+      return await uploadAdminFile(this, params, 'guides/')
+    } catch (e) {
+      return { code: -1, msg: e.message }
+    }
   },
 
   // 通用文件上传：dir 控制云存储目录（guides/ compliance/ tutorials/ print/）
   async uploadFile(params) {
     try {
-      const httpInfo = this.getHttpInfo && this.getHttpInfo()
-      let token, fileContent, fileName, fileType, dir
-      if (httpInfo && httpInfo.body) {
-        const body = JSON.parse(httpInfo.body)
-        ;({ token, fileContent, fileName, fileType, dir } = body)
-      } else {
-        ;({ token, fileContent, fileName, fileType, dir } = params || {})
-      }
-      await verifyAdminToken(token, ['admin'])
-
-      if (!fileContent || !fileName) return { code: -1, msg: '缺少文件内容或文件名' }
-
-      const buffer = Buffer.from(fileContent, 'base64')
-      const safeFileName = String(fileName).replace(/[\\/:*?"<>|]/g, '_')
-      const safeDir = String(dir || 'guides/').replace(/[^a-zA-Z0-9_\-/]/g, '').replace(/\/+$/, '') || 'guides'
-      const cloudPath = `${safeDir}/${Date.now()}_${safeFileName}`
-      const res = await uniCloud.uploadFile({
-        cloudPath,
-        fileContent: buffer,
-        fileType: fileType || 'application/octet-stream'
-      })
-
-      // 顺带返回一个临时可访问地址，便于管理端上传后立即预览
-      let tempUrl = ''
-      try {
-        const t = await uniCloud.getTempFileURL({ fileList: [res.fileID] })
-        tempUrl = (t.fileList && t.fileList[0] && t.fileList[0].tempFileURL) || ''
-      } catch (err) {
-        tempUrl = ''
-      }
-
-      return { code: 0, data: { fileUrl: res.fileID, tempUrl } }
+      return await uploadAdminFile(this, params, 'guides/')
     } catch (e) {
       return { code: -1, msg: e.message }
     }

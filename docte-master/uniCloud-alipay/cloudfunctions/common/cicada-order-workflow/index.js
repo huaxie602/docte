@@ -43,12 +43,16 @@ const PERMISSIONS = {
   confirm_payment: ['admin', 'finance'],
   update_invoice: ['admin', 'finance'],
   view_payment_proof: ['admin', 'finance'],
+  manage_inventory: ['admin', 'engineer'],
+  view_settlement: ['admin', 'finance'],
   update_remarks: ['admin', 'engineer', 'support'],
   add_timeline: ['admin', 'engineer', 'support'],
   manage_staff: ['admin'],
   manage_settings: ['admin'],
   manage_kb: ['admin', 'engineer'],
-  view_audit_log: ['admin', 'finance']
+  view_audit_log: ['admin', 'finance'],
+  view_feedback: ['admin', 'engineer', 'finance', 'support'],
+  handle_feedback: ['admin', 'support']
 }
 
 function normalizeRole(role = '') {

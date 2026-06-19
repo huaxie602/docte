@@ -160,7 +160,7 @@ npm run build
 - 认证请求携带 `Authorization: Bearer {token}`
 - 遇到 `401`、`1004` 或 `100401` 时前端会清理登录态
 
-小程序主流程当前以 `api/content.js` 中的 HTTP 接口为主，登录页保留 `uniCloud.importObject('cicada-client-user')` 云对象调用。`api/auth.js` 和 `api/repair.js` 是旧版兼容接口，可后续逐步统一。
+小程序主流程当前以 uniCloud 云对象调用为主，微信手机号登录走 `cicada-client-user.login({ code, phoneCode })`。`api/auth.js` 和 `api/repair.js` 是兼容封装，可后续继续统一调用入口。
 
 ## 上线前检查
 

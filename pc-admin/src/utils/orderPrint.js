@@ -80,6 +80,22 @@ export const formatOrderItems = (items = []) => {
   }).join('\n')
 }
 
+const safeNum = (value = 0) => Number(value || 0) || 0
+
+const getQuoteSummary = (order = {}) => {
+  const detail = order.quoteDetail || order.quote_detail || {}
+  const parts = Array.isArray(detail.parts) ? detail.parts : []
+  const services = Array.isArray(detail.services) ? detail.services : []
+  const others = Array.isArray(detail.others) ? detail.others : []
+  const rowTotal = (rows = []) => rows.reduce((sum, item) => sum + safeNum(item.amount || (safeNum(item.unitPrice || item.unit_price) * safeNum(item.quantity || 0))), 0)
+  const partsTotal = safeNum(detail.parts_total ?? detail.partsTotal ?? rowTotal(parts) ?? order.partsFee ?? order.parts_fee)
+  const servicesTotal = safeNum(detail.services_total ?? detail.servicesTotal ?? rowTotal(services) ?? order.laborFee ?? order.labor_fee)
+  const othersTotal = safeNum(detail.others_total ?? detail.othersTotal ?? rowTotal(others))
+  const autoTotal = safeNum(detail.auto_total ?? detail.autoTotal ?? (partsTotal + servicesTotal + othersTotal))
+  const finalPrice = safeNum(detail.final_price ?? detail.finalPrice ?? order.totalPrice ?? order.total_price ?? autoTotal)
+  return { parts, services, others, partsTotal, servicesTotal, othersTotal, autoTotal, finalPrice, remark: detail.remark || order.quoteRemark || order.quote_remark || '' }
+}
+
 const getPaperStyle = (paperSize) => {
   if (paperSize === 'A5') return '@page { size: A5; margin: 12mm; } body { margin: 12mm; }'
   if (paperSize === 'receipt-80') return '@page { size: 80mm auto; margin: 4mm; } body { margin: 4mm; } td { font-size: 12px; }'
@@ -88,6 +104,12 @@ const getPaperStyle = (paperSize) => {
 
 const buildPrintSection = (order, config) => {
   const fields = config.fields || defaultFields()
+  const quoteSummary = getQuoteSummary(order)
+  const quoteLines = [
+    quoteSummary.parts.length ? `配件费用\n${quoteSummary.parts.map((item, index) => `${index + 1}. ${item.name || item.part_name || '配件'} x${safeNum(item.quantity || 0)} = ¥${safeNum(item.amount || 0).toFixed(2)}`).join('\n')}` : '',
+    quoteSummary.services.length ? `服务费用\n${quoteSummary.services.map((item, index) => `${index + 1}. ${item.name || '服务'} x${safeNum(item.quantity || 0)} = ¥${safeNum(item.amount || 0).toFixed(2)}`).join('\n')}` : '',
+    quoteSummary.others.length ? `其他费用\n${quoteSummary.others.map((item, index) => `${index + 1}. ${item.name || '其他'} x${safeNum(item.quantity || 0)} = ¥${safeNum(item.amount || 0).toFixed(2)}`).join('\n')}` : ''
+  ].filter(Boolean)
   const rows = [
     ['工单编号', order.id],
     ['提交时间', order.submitTime],
@@ -99,7 +121,12 @@ const buildPrintSection = (order, config) => {
     ['产品明细', formatOrderItems(order.itemsList)],
     ['寄出物流', `${order.logisticsCompany || ''} ${order.logisticsNo || ''}`.trim()],
     ['回寄物流', `${order.returnCompany || ''} ${order.returnNo || ''}`.trim()],
-    fields.showCost ? ['费用合计', order.totalPrice != null ? `¥${order.totalPrice}` : '-'] : null,
+    fields.showCost ? ['配件小计', `¥${quoteSummary.partsTotal.toFixed(2)}`] : null,
+    fields.showCost ? ['服务小计', `¥${quoteSummary.servicesTotal.toFixed(2)}`] : null,
+    fields.showCost ? ['其他小计', `¥${quoteSummary.othersTotal.toFixed(2)}`] : null,
+    fields.showCost ? ['最终报价', `¥${quoteSummary.finalPrice.toFixed(2)}`] : null,
+    fields.showCost && quoteSummary.remark ? ['报价备注', quoteSummary.remark] : null,
+    fields.showCost && quoteLines.length ? ['报价明细', quoteLines.join('\n\n')] : null,
     ['随件留言', order.printRemark]
   ].filter(Boolean)
 

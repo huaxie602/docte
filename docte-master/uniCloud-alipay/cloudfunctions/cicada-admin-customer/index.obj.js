@@ -401,11 +401,16 @@ module.exports = {
       const res = await db.collection('cicada_user_devices').where(dbCmd.or(or)).orderBy('create_time', 'desc').get()
       const list = res.data.map(d => ({
         _id: d._id,
+        product_category: d.product_category || '',
         product_name: d.product_name || '',
         model: d.model || '',
         sn: d.sn || '',
+        purchase_channel: d.purchase_channel || '',
+        dealer_name: d.dealer_name || '',
         buy_date: d.buy_date || '',
+        warranty_months: Number(d.warranty_months || 0) || 0,
         warranty_expire: d.warranty_expire || '',
+        maintenance_cycle: d.maintenance_cycle || '',
         ext_warranty: Array.isArray(d.ext_warranty) ? d.ext_warranty : [],
         ...computeWarranty(d),
         create_time: d.create_time || 0
@@ -443,11 +448,16 @@ module.exports = {
       }
 
       const data = {
+        product_category: normalizeText(dv.product_category),
         product_name: productName,
         model: normalizeText(dv.model),
         sn,
+        purchase_channel: normalizeText(dv.purchase_channel),
+        dealer_name: normalizeText(dv.dealer_name),
         buy_date: normalizeText(dv.buy_date),
+        warranty_months: Number(dv.warranty_months || 0) || 0,
         warranty_expire: normalizeText(dv.warranty_expire),
+        maintenance_cycle: normalizeText(dv.maintenance_cycle),
         ext_warranty: Array.isArray(dv.ext_warranty) ? dv.ext_warranty : [],
         update_time: Date.now()
       }
