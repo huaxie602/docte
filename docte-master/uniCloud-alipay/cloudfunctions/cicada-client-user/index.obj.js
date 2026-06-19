@@ -28,8 +28,8 @@ function getWechatConfigValue(...keys) {
 }
 
 function getWechatAppConfig() {
-  const appId = getWechatConfigValue('WX_APPID', 'WECHAT_APPID') || privateWechatConfig.appId
-  const secret = getWechatConfigValue('WX_SECRET', 'WECHAT_SECRET') || privateWechatConfig.appSecret
+  const appId = privateWechatConfig.appId || getWechatConfigValue('WX_APPID', 'WECHAT_APPID')
+  const secret = privateWechatConfig.appSecret || getWechatConfigValue('WX_SECRET', 'WECHAT_SECRET')
   return {
     appId: String(appId || '').trim(),
     secret: String(secret || '').trim()

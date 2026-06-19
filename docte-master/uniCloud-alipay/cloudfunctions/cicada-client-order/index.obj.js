@@ -38,8 +38,8 @@ function getSubscriptionTemplateId(scene = '') {
 }
 
 function getWechatAppConfig() {
-  const appId = getEnvValue('WX_APPID', 'WECHAT_APPID') || privateWechatConfig.appId
-  const secret = getEnvValue('WX_SECRET', 'WECHAT_SECRET') || privateWechatConfig.appSecret
+  const appId = privateWechatConfig.appId || getEnvValue('WX_APPID', 'WECHAT_APPID')
+  const secret = privateWechatConfig.appSecret || getEnvValue('WX_SECRET', 'WECHAT_SECRET')
   if (!appId || !secret) throw new Error('未配置 WX_APPID/WX_SECRET')
   return { appId, secret }
 }

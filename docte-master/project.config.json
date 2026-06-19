@@ -9,7 +9,7 @@
     "es6": true,
     "postcss": false,
     "minified": true,
-    "minifyWXML": false,
+    "minifyWXML": true,
     "newFeature": true,
     "bigPackageSizeSupport": true,
     "compileWorklet": false,
@@ -23,6 +23,7 @@
     "disableUseStrict": false,
     "useCompilerPlugins": false,
     "condition": false,
+    "lazyCodeLoading": "requiredComponents",
     "swc": false,
     "disableSWC": true,
     "babelSetting": {
